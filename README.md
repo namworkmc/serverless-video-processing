@@ -36,10 +36,10 @@ Teardown: `terraform destroy`, then `docker compose down`.
 ## Repository layout
 
 ```
-compose.yaml      # floci emulator
-terraform/        # all AWS resources (buckets, queues, tables, lambdas, gateway)
-lambdas/          # Lambda function source code (one dir per function)
-_bmad-output/     # BMAD planning artifacts (PRD, architecture, epics)
+docker-compose.yaml # floci emulator
+terraform/          # all AWS resources (buckets, queues, tables, lambdas, gateway)
+lambdas/            # Lambda function source code (one dir per function)
+_bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 ```
 
 ## Status

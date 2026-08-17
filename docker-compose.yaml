@@ -6,6 +6,11 @@ services:
     image: floci/floci:latest
     ports:
       - "4566:4566"
+    volumes:
+      # Required for Lambda (and other Docker-backed services: RDS, ElastiCache,
+      # OpenSearch, MSK, ECS) — floci spawns real containers for them.
+      # On Windows Docker Desktop this proxies to the host daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - AWS_DEFAULT_REGION=us-east-1
     healthcheck:
