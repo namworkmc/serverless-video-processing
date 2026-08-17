@@ -1,0 +1,16 @@
+# Floci — local AWS emulator (LocalStack-compatible)
+# All AWS services at http://localhost:4566, no auth token required.
+# Docs: https://floci.io/floci/
+services:
+  floci:
+    image: floci/floci:latest
+    ports:
+      - "4566:4566"
+    environment:
+      - AWS_DEFAULT_REGION=us-east-1
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
