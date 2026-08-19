@@ -35,8 +35,9 @@ never hardcoded.
 
 ## Toolchain pins
 
-- Python 3.11 (Lambda runtime parity), installed via `astral-sh/setup-uv@v6`
-- Terraform 1.6.1 via `hashicorp/setup-terraform@v3` (matches `required_version >= 1.6.0`)
+- Python 3.11 (Lambda runtime parity), installed via `astral-sh/setup-uv@v7`
+- Terraform 1.6.1 via `hashicorp/setup-terraform@v4` (matches `required_version >= 1.6.0`)
+- Actions are on Node-24 majors (`checkout@v5`, `setup-uv@v7`, `setup-terraform@v4`, `upload-artifact@v5`) — GitHub deprecated the Node 20 runner runtime (Sept 2025) and warns on older majors
 - ruff and pytest are pulled ad-hoc by `uv run --with` — no lockfile needed yet
 
 ## Smoke stage details
