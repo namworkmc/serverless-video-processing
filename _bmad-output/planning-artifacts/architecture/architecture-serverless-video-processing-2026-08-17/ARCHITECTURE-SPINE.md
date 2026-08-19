@@ -263,4 +263,4 @@ erDiagram
 - **SQS DLQ / retry / redrive policy** — not needed for the happy path; add when failure handling matures.
 - **Ingest-leg reconciliation** — a lost `video.uploaded` orphans the video in UPLOADED (accepted for the lab).
 - **Real AWS deployment** — floci only for v1; AD-8 keeps code endpoint-agnostic, but gateway invoke-URL form and shim necessity differ on real AWS (native EventBridge→SFN targets exist there). Revisit with the infra phase.
-- **CI/CD, remote state, modules/workspaces** — out of scope for the lab (PRD NFR-6).
+- **Remote state, modules/workspaces, real-AWS deploy pipeline** — out of scope for the lab (PRD NFR-6). *Amendment 2026-08-19 (user decision):* a local-lab CI pipeline IS in scope — GitHub Actions (`.github/workflows/ci.yml`): lint (ruff E,F + terraform fmt), pytest unit suite, terraform validate, and an ephemeral smoke stage that runs the AD-9 bring-up order on the runner (floci compose → terraform apply → smoke-Lambda invoke → destroy). No remote environment, no secrets; design record in `_bmad-output/test-artifacts/ci-pipeline-progress.md`.

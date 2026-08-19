@@ -1,0 +1,143 @@
+# CI pipeline — serverless-video-processing (floci lab)
+# Generated 2026-08-19 by BMad TEA CI workflow (Murat) with architecture
+# ratification (Winston). Design record: _bmad-output/test-artifacts/ci-pipeline-progress.md
+#
+# Stages:
+#   lint               ruff (E,F) on lambdas/ + terraform fmt -check
+#   unit-test          pytest on lambdas/ (shared access layer suite)
+#   terraform-validate terraform init -backend=false + validate
+#   smoke              floci via docker compose -> terraform apply ->
+#                      invoke smoke Lambda through floci's Lambda API ->
+#                      assert all_pass -> terraform destroy (always)
+#
+# Deliberate omissions (backend-only stack, see progress doc):
+#   - no sharding (27 tests, single process)
+#   - no burn-in (targets UI flakiness; not applicable)
+#   - no Pact/contract jobs (no contract tests in repo)
+#   - no secrets required (floci uses dummy creds, local tfstate)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint (ruff + terraform fmt)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+
+      - name: Ruff (E,F ruleset)
+        run: uv run --with ruff ruff check lambdas/ --select E,F
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.1
+
+      - name: Terraform fmt check
+        working-directory: terraform
+        run: terraform fmt -check -recursive
+
+  unit-test:
+    name: Unit tests (shared layer)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.11"
+
+      - name: Run pytest
+        run: uv run --with 'pytest>=8.0' pytest lambdas/ -q --junitxml=pytest-report.xml
+
+      - name: Upload test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest-report.xml
+          retention-days: 30
+
+  terraform-validate:
+    name: Terraform validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.1
+
+      - name: Terraform init (no backend)
+        working-directory: terraform
+        run: terraform init -backend=false -input=false
+
+      - name: Terraform validate
+        working-directory: terraform
+        run: terraform validate
+
+  smoke:
+    name: Smoke (floci + terraform apply + Lambda invoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [unit-test, terraform-validate]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.1
+
+      - name: Start floci
+        run: docker compose up -d --wait
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        working-directory: terraform
+        run: terraform apply -auto-approve
+
+      - name: Invoke smoke Lambda via floci
+        run: |
+          RESPONSE="$(curl -sS -X POST "http://localhost:4566/2015-03-31/functions/smoke/invocations" \
+            -H 'Content-Type: application/json' -d '{"scenario":"all"}')"
+          echo "$RESPONSE"
+          echo "$RESPONSE" | python3 -c "import json,sys; r=json.load(sys.stdin); sys.exit(0 if r['statusCode']==200 and r['body']['all_pass'] else 1)"
+
+      - name: Terraform destroy
+        if: always()
+        working-directory: terraform
+        run: terraform destroy -auto-approve
+
+      - name: Capture floci logs
+        if: failure()
+        run: docker compose logs floci > floci-logs.txt
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failure
+          path: floci-logs.txt
+          retention-days: 30
