@@ -44,7 +44,10 @@ _bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 
 ## Status
 
-Lab bootstrap complete (Story 1.1): floci pinned to `1.6.0`, Terraform substrate
-verified against `localhost:4566` — `terraform apply`/`destroy` run clean with zero
-resources declared. Epic 1 in progress: shared Lambda access layer and the upload
-journey are next — see `_bmad-output/`.
+Story 1.2 complete: shared access layer (`lambdas/_shared/`) implemented —
+status state machine via DynamoDB conditional writes, deterministic UUID5
+event envelopes, error mapping, env-driven boto3 clients — and verified
+inside floci's real Docker runtime by the `smoke` Lambda fixture
+(`terraform/smoke.tf`, incl. the `video-metadata` table). boto3 confirmed
+present in the runtime image. Next: Story 1.3, the upload journey through
+the gateway — see `_bmad-output/`.
