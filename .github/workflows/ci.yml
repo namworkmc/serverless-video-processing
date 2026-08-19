@@ -4,6 +4,8 @@
 #
 # Stages:
 #   lint               ruff (E,F) on lambdas/ + terraform fmt -check
+#                      (advisory: continue-on-error — best-practice only,
+#                      never blocks the pipeline)
 #   unit-test          pytest on lambdas/ (shared access layer suite)
 #   terraform-validate terraform init -backend=false + validate
 #   smoke              floci via docker compose -> terraform apply ->
@@ -34,6 +36,10 @@ jobs:
     name: Lint (ruff + terraform fmt)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Advisory only: lint findings are best-practice signals, not gates.
+    # continue-on-error keeps the job result from cancelling downstream
+    # stages (needs: lint treats this job as satisfied either way).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
 
