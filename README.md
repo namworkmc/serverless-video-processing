@@ -44,5 +44,7 @@ _bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 
 ## Status
 
-Phase 0 complete: floci running, Terraform↔floci wiring verified (S3 round-trip).
-Planning phase (PRD → Architecture → Epics → Sprint) is next — see `_bmad-output/`.
+Lab bootstrap complete (Story 1.1): floci pinned to `1.6.0`, Terraform substrate
+verified against `localhost:4566` — `terraform apply`/`destroy` run clean with zero
+resources declared. Epic 1 in progress: shared Lambda access layer and the upload
+journey are next — see `_bmad-output/`.
