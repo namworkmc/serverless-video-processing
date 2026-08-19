@@ -1,5 +1,5 @@
 ---
-stepsCompleted: [step-01-validate-prerequisites]
+stepsCompleted: [step-01-validate-prerequisites, step-02-design-epics, step-03-create-stories, step-04-final-validation]
 inputDocuments:
   - _bmad-output/planning-artifacts/prds/prd-serverless-video-processing-2026-08-17/prd.md
   - _bmad-output/planning-artifacts/prds/prd-serverless-video-processing-2026-08-17/addendum.md
@@ -161,6 +161,12 @@ The builder searches processed videos by title through the gateway, rebuilds the
 
 **Dependencies:** Epic 1 → Epic 2 → Epic 3 → Epic 4. Epics 3 and 4 are technically parallel after Epic 2 but sequenced for incremental value; FR-22 completion and SM-1 verification deliberately land last.
 
+**Success Metrics (PRD §6):**
+
+- **SM-1 — definition of done:** from a clean `terraform destroy` + `apply` with floci running, one upload through the gateway produces a `PROCESSED` metadata record, a status-history entry, and a search hit — all queryable through the gateway — and the execution path demonstrably exercises each target service (API Gateway, Lambda, S3, DynamoDB, EventBridge, Step Functions), verified via Step Functions execution history, Lambda logs, and event records. Verified in Story 4.4.
+- **SM-2:** every resource in the environment was created by Terraform — covered by FR-23 / NFR-8 (verified in Story 4.4).
+- **SM-3:** the builder can explain each service's role in the pipeline — self-assessed, deliberately no story coverage.
+
 ## Epic 1: Lab Foundation & Video Upload Ingest
 
 The builder brings up the lab (docker compose up → terraform apply) and uploads a video through the gateway — the object lands in S3, an UPLOADED record exists in DynamoDB, and video.uploaded is on the EventBridge bus. Includes the environment bootstrap (compose + Terraform provider skeleton), the shared access layer (state machine, event shapes, error mapping, clients), the video-metadata table, and the API Gateway with its upload route.
@@ -210,6 +216,7 @@ So that every function enforces identical transition rules, event shapes, and er
 **When** an envelope is built for `(videoId, status)`
 **Then** `eventId` is the deterministic name-based UUID5 of `(videoId, status)` — identical across calls and restarts (NFR-2)
 **And** the envelope carries `eventId` + `schemaVersion` + `detail`, with verb-in-past event names
+**And** the `detail` payload shape is fixed here and consumed unchanged downstream (shim → ASL → transcode → publisher → consumers): `video.uploaded` detail = `{videoId, status, bucket, key}`; `video.processed` detail = `{videoId, status, bucket, originalKey, processedKey}` (AD-6)
 
 **Given** the layer's error mapping
 **When** `ConditionalCheckFailedException` on a transition, unknown `videoId`, malformed input, or any other error occurs
@@ -235,6 +242,7 @@ So that the object lands in S3, an UPLOADED record exists in DynamoDB, and video
 **Given** the gateway running
 **When** I POST a multipart/form-data video to `/videos/upload` (via the `_aws/execute-api` URL)
 **Then** the handler parses the raw multipart body itself (`isBase64Encoded: false` — never assumes base64)
+**And** the handler reads an optional `title` multipart form field, falling back to the uploaded filename when absent, and stores it in the record (FR-10 — this is the field Story 4.2's title search matches on)
 **And** the response is HTTP 2xx returning the minted `videoId` (UUID)
 **And** the object exists in `video-uploads` under a key containing that same `videoId` (FR-1, FR-2)
 **And** the `video-metadata` record exists with status `UPLOADED` and created/updated timestamps populated (FR-3)
@@ -249,3 +257,240 @@ So that the object lands in S3, an UPLOADED record exists in DynamoDB, and video
 **Given** a malformed request (missing file / unparseable multipart)
 **When** I POST it to `/videos/upload`
 **Then** the gateway returns 400 with body `{"error": ...}`, passed through unchanged (NFR-3, FR-21)
+
+## Epic 2: Event-Driven Processing Pipeline
+
+The builder uploads a video and watches it process itself: video.uploaded → processing-trigger queue → shim Lambda → Step Functions (status-first ASL with direct service integrations) → transcode → PROCESSED → exactly one video.processed event. Redeliveries are absorbed as no-ops.
+
+### Story 2.1: Transcode Worker Lambda (pure S3 in → S3 out)
+
+As a builder,
+I want a transcode Lambda that reads the uploaded object and writes a processed object (demo-mode copy fallback),
+So that the pipeline has a pure worker — no status writes, no events — exactly how real pipeline workers look.
+
+**Acceptance Criteria:**
+
+**Given** a video uploaded through the gateway (Epic 1) with its object in `video-uploads`
+**When** Terraform declares the `transcode` Lambda (python3.11 zip, env vars for bucket names + `AWS_ENDPOINT_URL`) and its IAM role, and `terraform apply` runs
+**Then** the function exists and is invocable
+
+**Given** the transcode Lambda invoked with the domain payload (`videoId`, original key)
+**When** it runs
+**Then** it reads the object from `video-uploads` and writes the processed object to `video-processed` under a key tied to the same `videoId` (FR-6, demo-mode copy fallback — no ffmpeg)
+**And** it performs **no** status writes and publishes **no** events (pure worker, AD-4)
+**And** its invocation appears in CloudWatch Logs (NFR-5)
+
+### Story 2.2: Processing State Machine + Event Publisher
+
+As a builder,
+I want a Step Functions state machine that drives UPLOADED → PROCESSING → PROCESSED via direct DynamoDB integrations and ends with an event-publisher Lambda emitting exactly one video.processed,
+So that status-first ordering is structural (in the ASL, not in code discipline) and I learn direct service integrations.
+
+**Acceptance Criteria:**
+
+**Given** Terraform declares the `event-publisher` Lambda (sole constructor of the `video.processed` envelope via the shared layer — AD-4/AD-6), its IAM role, and the `processing-state-machine` whose ASL is, in order: `Task(dynamodb:updateItem UPLOADED→PROCESSING)` → `Task(lambda:invoke transcode)` → `Task(dynamodb:updateItem →PROCESSED)` → `Task(lambda:invoke event-publisher)`
+**When** `terraform apply` runs
+**Then** the state machine exists
+**And** the ASL's inline condition pairs (`#s = UPLOADED` → `PROCESSING`, `#s = PROCESSING` → `PROCESSED`) mirror the shared layer's legal-transition table exactly (AD-4)
+
+**Given** an `UPLOADED` video (from Epic 1)
+**When** I start an execution ad-hoc (`StartExecution` with the domain payload: videoId, status, keys)
+**Then** the metadata record transitions `UPLOADED → PROCESSING → PROCESSED` in order, each acknowledged before the next state runs (FR-7)
+**And** the processed object exists in `video-processed`
+**And** exactly one `video.processed` event is on the bus, carrying `eventId` = UUID5(`videoId`, `PROCESSED`) + `schemaVersion` (FR-8)
+**And** the execution is visible in Step Functions history with the `videoId` in its input (FR-5, NFR-5)
+
+**Given** the same execution re-run for the same video (record already `PROCESSED`)
+**When** the first `updateItem` condition fails
+**Then** the execution fails — no status regression, no second event (FR-11 via ASL; the trigger-leg dedupe of Story 2.3 makes this unreachable in practice)
+
+**Given** any future ASL change
+**When** it is applied
+**Then** it is done via `terraform apply -replace=aws_sfn_state_machine.<name>` (floci has no `UpdateStateMachine`), documented in the story's notes
+
+### Story 2.3: Trigger Leg — EventBridge Rule, Queue, and Shim
+
+As a builder,
+I want video.uploaded to route through a processing-trigger queue to a shim Lambda that starts the state machine with a deterministic execution name,
+So that uploading a video automatically processes it — and a republish/redelivery is a dedupe, never a second execution.
+
+**Acceptance Criteria:**
+
+**Given** Terraform declares the `processing-trigger-queue` (SQS), the EventBridge rule matching `video.uploaded` on the custom bus targeting **only** that queue, the `sfn-trigger-shim` Lambda, its IAM role (sqs:ReceiveMessage via ESM, states:StartExecution), and the SQS event-source mapping
+**When** `terraform apply` runs
+**Then** the wiring exists — and the rule targets the queue, never the state machine directly (floci can't; AD-5)
+
+**Given** the full stack applied
+**When** I upload a video through the gateway
+**Then** the shim receives the SQS record, unwraps `Records[].body` → EventBridge envelope → `detail`, and calls `StartExecution` with execution name `eb-{eventId}` (deterministic from the event's `eventId`)
+**And** a state machine execution starts automatically and runs to `PROCESSED` with exactly one `video.processed` event (FR-5, FR-7, FR-8)
+
+**Given** the same `video.uploaded` redelivered (republish or SQS retry) after the video is already `PROCESSING`/`PROCESSED`
+**When** the shim processes it again
+**Then** `StartExecution` hits `ExecutionAlreadyExists`, which the shim treats as success (ack) — no second execution, no re-transcode, no status regression (FR-9, NFR-1/2)
+
+**Given** the Bruno collection
+**When** I re-run the upload journey and inspect ad-hoc (Step Functions history, Lambda logs)
+**Then** exactly one execution named `eb-{eventId}` exists for that video and the full path is traceable through logs (NFR-5)
+
+## Epic 3: Status History Surface
+
+The builder queries a video's recorded terminal-event history through the gateway — history queue + history-consumer with eventId dedupe and poison-event handling, status-history table, history-query Lambda, and the gateway history route.
+
+### Story 3.1: History Consumer — Recording Terminal Events
+
+As a builder,
+I want a history-consumer Lambda behind its own SQS queue that appends one status-history entry per unique video.processed event,
+So that the pipeline's terminal events leave a queryable, deduplicated audit trail — and I learn queue-based event consumption.
+
+**Acceptance Criteria:**
+
+**Given** Terraform declares the `status-history` table (PK `eventId`, attributes: videoId, status, timestamp), the `history-queue` (SQS), the EventBridge rule matching `video.processed` targeting **only** the history queue, the `history-consumer` Lambda, its IAM role, and the SQS event-source mapping
+**When** `terraform apply` runs
+**Then** the wiring exists — and the `video.processed` rule now targets the history queue in addition to any existing targets, without altering the `video.uploaded` rule (AD-1: new consumer = new queue + new rule target)
+
+**Given** a video that has processed to `PROCESSED` (Epic 2)
+**When** the consumer receives the SQS record
+**Then** it unwraps `Records[].body` → EventBridge envelope → `detail`, validates the `videoId` against `video-metadata`, and appends a history entry keyed by `eventId` carrying status, videoId, and timestamp (FR-14)
+**And** ad-hoc inspection of `status-history` shows exactly that entry
+
+**Given** the same event redelivered (same `eventId`)
+**When** the consumer processes it again
+**Then** the duplicate appends nothing — exactly one entry per unique `eventId` (FR-14, NFR-1)
+
+**Given** an event whose `videoId` the metadata table reports unknown
+**When** the consumer validates it
+**Then** the event is dropped — not stored, message acked, never retried (FR-15 poison handling)
+
+**Given** a transient metadata-unavailable error during validation
+**When** the consumer fails the message
+**Then** SQS redelivers and the event is retried, never dropped (FR-15)
+
+### Story 3.2: History Query Through the Gateway
+
+As a builder,
+I want to GET a video's status history through the gateway,
+So that the second client journey works end-to-end and I can see the terminal event recorded for my upload.
+
+**Acceptance Criteria:**
+
+**Given** Terraform declares the `history-query` Lambda, its IAM role, and the gateway route `GET /videos/{videoId}/history` → history-query
+**When** `terraform apply` runs
+**Then** the route exists alongside the upload route (FR-21 route table grows; responses pass through unchanged)
+
+**Given** a processed video with a recorded history entry (Story 3.1)
+**When** I GET `/videos/{videoId}/history` via the gateway
+**Then** the response is HTTP 200 with the video's entries, each carrying status, `eventId`, and timestamp (FR-16)
+
+**Given** an unknown `videoId`
+**When** I GET its history
+**Then** the gateway returns 404 with body `{"error": ...}` (FR-13 semantics, NFR-3)
+
+**Given** the Bruno collection
+**When** I add the history request (with assert blocks and poll-with-timeout — the consumer leg is async, so the request retries until the entry appears or the timeout fails the assertion; no fixed sleeps) and run it after the upload journey
+**Then** it passes against the gateway URL only, and the returned entries match the ad-hoc `status-history` inspection (FR-22 grows)
+
+## Epic 4: Search Surface & End-to-End Lab Verification
+
+The builder searches processed videos by title through the gateway, rebuilds the index admin-only, and then proves the whole lab: clean terraform destroy + apply plus the full Bruno collection reproduces SM-1 (PROCESSED record + history entry + search hit, every target service demonstrably exercised).
+
+### Story 4.1: Search Consumer — Indexing Processed Videos
+
+As a builder,
+I want a search-consumer Lambda behind its own SQS queue that upserts a search-index entry for every PROCESSED event,
+So that processed videos become searchable — and I learn status-filtered consumption.
+
+**Acceptance Criteria:**
+
+**Given** Terraform declares the `search-index` table (PK `videoId`, attributes: title, processedKey, indexedAt), the `search-queue` (SQS), the EventBridge rule matching `video.processed` targeting the search queue (added alongside the history queue target — AD-1), the `search-consumer` Lambda, its IAM role, and the SQS event-source mapping
+**When** `terraform apply` runs
+**Then** the wiring exists — the `video.processed` rule now fans out to both the history and search queues, each consumer behind its own queue
+
+**Given** a video that has processed to `PROCESSED` (Epic 2)
+**When** the consumer receives the SQS record
+**Then** it unwraps `Records[].body` → envelope → `detail`, checks `status = PROCESSED`, validates the `videoId` against `video-metadata`, and upserts a `search-index` entry keyed by `videoId` with title, processedKey, and indexedAt (FR-17)
+
+**Given** a terminal event with `status = FAILED` (rules only in v1 — exercised by a hand-crafted test event)
+**When** the consumer receives it
+**Then** it indexes nothing — FAILED videos never appear in the index (FR-17, AD-6 status filter)
+
+**Given** the same event redelivered (same `videoId`)
+**When** the consumer processes it again
+**Then** the upsert overwrites with the same entry — no duplicates (NFR-1)
+
+**Given** an event whose `videoId` the metadata reports unknown / a transient metadata error
+**When** the consumer validates it
+**Then** unknown → dropped and acked; transient → retried, never dropped (FR-15 semantics, per FR-17)
+
+### Story 4.2: Title Search Through the Gateway
+
+As a builder,
+I want to search processed videos by title substring through the gateway,
+So that the third and final client journey works end-to-end.
+
+**Acceptance Criteria:**
+
+**Given** Terraform declares the `search-query` Lambda, its IAM role, and the gateway route `GET /videos/search?title=` → search-query
+**When** `terraform apply` runs
+**Then** all three routes of the authoritative route table now exist (FR-21 complete)
+
+**Given** indexed processed videos (Story 4.1)
+**When** I GET `/videos/search?title=<substring>` via the gateway
+**Then** the response is HTTP 200 with the matching processed videos (Scan with contains filter — lab scale, NFR-7) (FR-18)
+
+**Given** a title substring matching nothing
+**When** I search
+**Then** the response is HTTP 200 with an empty result list (not an error)
+
+**Given** a missing or empty `title` parameter
+**When** I search
+**Then** the gateway returns 400 with body `{"error": ...}` (NFR-3)
+
+**Given** the Bruno collection
+**When** I add the search request (with assert blocks and poll-with-timeout — indexing is async; retry until the hit appears or the timeout fails the assertion; no fixed sleeps) and run it after the upload journey
+**Then** it passes against the gateway URL only and returns the uploaded video by title substring (FR-22 grows)
+
+### Story 4.3: Admin-Only Index Rebuild
+
+As a builder,
+I want to rebuild the search index from the metadata table via a direct Lambda invoke,
+So that I can prove the index is disposable and derived — and the rebuild stays admin-only with no client-facing surface.
+
+**Acceptance Criteria:**
+
+**Given** Terraform declares the `search-rebuild` Lambda and its IAM role — and **no** gateway route, rule, or queue references it
+**When** `terraform apply` runs
+**Then** the function exists reachable only by direct invoke (FR-19, AD dependency direction: search-rebuild is the sole repopulator of `search-index`)
+
+**Given** the `search-index` table cleared (ad-hoc) and processed videos present in `video-metadata`
+**When** I invoke `search-rebuild` directly (`lambda invoke`, ad-hoc — allowed inspection/admin, not setup)
+**Then** it scans `video-metadata`, repopulates the index with `PROCESSED` videos only, and a subsequent gateway search returns them (FR-19)
+
+**Given** the Bruno collection and the gateway route table
+**When** I inspect both
+**Then** no request or route exposes the rebuild — the constraint "no client-facing rebuild surface" holds structurally (FR-19)
+
+### Story 4.4: End-to-End Lab Verification (SM-1)
+
+As a builder,
+I want a clean terraform destroy + apply followed by the full Bruno collection to reproduce the entire pipeline,
+So that I've proven the lab is reproducible and every target AWS service is demonstrably exercised — SM-1, the definition of done.
+
+**Acceptance Criteria:**
+
+**Given** floci running and the complete Terraform configuration
+**When** I run `terraform destroy` then `terraform apply`
+**Then** the entire environment rebuilds from the same configuration with no manual steps and no `aws` CLI in the procedure (FR-23, FR-24, NFR-6, NFR-8)
+
+**Given** the fresh environment
+**When** I run the complete Bruno collection via `bru run` (upload → history → search, gateway URL only; the history and search requests use the poll-with-timeout pattern from Stories 3.2/4.2, since the pipeline between upload and the derived surfaces is async)
+**Then** every request passes its assertions
+**And** one upload produces: a `PROCESSED` metadata record, a status-history entry, and a search hit — all queryable through the gateway (SM-1)
+
+**Given** that run
+**When** I inspect ad-hoc (Step Functions execution history, Lambda CloudWatch Logs, event records)
+**Then** the full path of the video is traceable through logs and the execution demonstrably exercises each target service: API Gateway, Lambda, S3, DynamoDB, EventBridge, Step Functions (SM-1, NFR-5)
+
+**Given** the README / setup documentation
+**When** I review it
+**Then** it documents the fixed bring-up order (`docker compose up` → `terraform apply` → exercise via Bruno through the `_aws/execute-api` URL with the `apiId` output), the `-replace` caveat for ASL changes, and contains no `aws` CLI in setup/teardown (FR-24, AD-8/AD-9)
