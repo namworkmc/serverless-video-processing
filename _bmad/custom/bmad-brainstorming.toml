@@ -1,0 +1,5 @@
+# Team override — Discord delivery hook.
+# Real instructions live in report-delivery.md (single source of truth).
+
+[workflow]
+on_complete = "Read {project-root}/_bmad/custom/report-delivery.md and execute every instruction in it before exiting this workflow. This delivery step is mandatory."
