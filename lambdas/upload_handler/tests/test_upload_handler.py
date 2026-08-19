@@ -199,7 +199,7 @@ class TestMultipartParsing:
         event = _make_event(body)
 
         response = handler(event, None)
-        body_json = json.loads(response["body"])
+        json.loads(response["body"])  # body must be valid JSON
 
         # The S3 key should contain the original filename
         s3 = deps["s3"]
@@ -371,7 +371,7 @@ class TestEventEmission:
         event = _make_event(body)
 
         response = handler(event, None)
-        video_id = json.loads(response["body"])["videoId"]
+        json.loads(response["body"])["videoId"]  # response carries videoId
 
         eb = deps["eventbridge"]
         assert len(eb.events) == 1
@@ -385,7 +385,7 @@ class TestEventEmission:
         event = _make_event(body)
 
         response = handler(event, None)
-        video_id = json.loads(response["body"])["videoId"]
+        json.loads(response["body"])["videoId"]  # response carries videoId
 
         eb = deps["eventbridge"]
         detail = json.loads(eb.events[0]["Detail"])
@@ -418,7 +418,7 @@ class TestMissingFile:
     def test_missing_file_part_returns_400(self, deps):
         """AC4/NFR-3: missing file → 400 {"error": ...}."""
         # Multipart with only a title field, no file
-        body = _multipart_body({"title": "no file here"}, "file", "", b"")
+        _multipart_body({"title": "no file here"}, "file", "", b"")
         # Remove the file part entirely by building without it
         body_no_file = (
             f"--{BOUNDARY}\r\n"
@@ -536,8 +536,8 @@ class TestDuplicateFilename:
         (because videoId differs)."""
         body = _multipart_body({}, "file", "same.mp4", b"data")
 
-        r1 = handler(_make_event(body), None)
-        r2 = handler(_make_event(body), None)
+        handler(_make_event(body), None)
+        handler(_make_event(body), None)
 
         s3 = deps["s3"]
         assert len(s3.put_calls) == 2
