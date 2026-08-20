@@ -11,8 +11,8 @@ in setup/teardown.
 |---|---|
 | Emulator | floci (`localhost:4566`, no auth token) |
 | IaC | Terraform (AWS provider → `http://localhost:4566`) |
-| Compute | AWS Lambda (`transcode` worker, demo-mode copy) — ffmpeg transcode planned |
-| Orchestration | Step Functions / EventBridge — bus live, state machine planned (Story 2.2) |
+| Compute | AWS Lambda (`transcode` worker, demo-mode copy; `event-publisher`) — ffmpeg transcode planned |
+| Orchestration | Step Functions (`processing-state-machine`) + EventBridge (`video-bus`) |
 | Storage | S3 (`video-uploads`, `video-processed`) + DynamoDB (`video-metadata`) |
 | Ingress | API Gateway v2 (`POST /videos/upload`) |
 
@@ -114,6 +114,54 @@ Re-invoking with the same payload overwrites the same processed key
 python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(json.dumps(json.load(c.invoke(FunctionName='transcode', Payload=json.dumps({'videoId': '<uuid>', 'originalKey': '<uuid>/<filename>'}))['Payload']), indent=2))"
 ```
 
+## Processing state machine (Story 2.2)
+
+The `processing-state-machine` (`terraform/processing.tf` +
+`terraform/processing.asl.json`) drives the status walk via **direct
+service integrations** — status-first ordering is structural, in the ASL
+(AD-4):
+
+```
+MarkProcessing  Task(dynamodb:updateItem, condition #s = UPLOADED → PROCESSING)
+Transcode       Task(lambda:invoke transcode)
+MarkProcessed   Task(dynamodb:updateItem, condition #s = PROCESSING → PROCESSED,
+                     also SETs processedKey + updatedAt)
+PublishProcessed Task(lambda:invoke event-publisher)
+```
+
+The ASL's inline condition pairs mirror the shared layer's
+legal-transition table (`lambdas/_shared/status.py`) exactly — a
+transition-table change is one coordinated ASL + shared-layer change
+(backstopped by `lambdas/event_publisher/tests/test_asl_definition.py`).
+Input contract = the `video.uploaded` detail
+`{videoId, status, bucket, key}` (Story 2.3's shim will pass exactly
+that). Any task failure fails the execution — no Catch/Retry — so a
+re-run for an already-PROCESSED video fails at the first condition with
+no status regression and no second event (FR-11 via ASL).
+
+The `event-publisher` Lambda is the **sole constructor** of the
+`video.processed` envelope (AD-4/AD-6): the ASL passes it only the
+transcode result `{videoId, originalKey, processedKey, sizeBytes}`; the
+envelope (deterministic UUID5 `eventId` of `(videoId, PROCESSED)`,
+`schemaVersion`, fixed detail shape) is built via the shared layer, with
+the detail's `bucket` from its `PROCESSED_BUCKET` env var. Wire Detail
+mirrors the upload handler's flat shape.
+
+Start an execution ad-hoc via local boto3 (the aws CLI shim is broken):
+
+```bash
+python -c "import boto3, json; c = boto3.client('stepfunctions', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(c.start_execution(stateMachineArn='arn:aws:states:us-east-1:000000000000:stateMachine:processing-state-machine', input=json.dumps({'videoId': '<uuid>', 'status': 'UPLOADED', 'bucket': 'video-uploads', 'key': '<uuid>/<filename>'})))"
+```
+
+**floci platform facts (binding):**
+
+- floci has **no `UpdateStateMachine`** — any ASL change requires
+  `terraform apply -replace=aws_sfn_state_machine.processing`.
+- floci's `lambda:invoke` returns the Lambda result **directly** as the
+  task result — no `{Payload: ...}` wrapper like real AWS (probe-verified
+  2026-08-20). The Transcode task therefore uses `ResultPath` only; on
+  real AWS a `ResultSelector` unwrapping `$.Payload.*` would be required.
+
 ## Repository layout
 
 ```
@@ -126,21 +174,24 @@ _bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 
 ## Status
 
-Story 2.1 complete: the `transcode` worker Lambda exists and works
-ad-hoc — pure S3 in → S3 out (demo-mode copy, no ffmpeg), no status
-writes, no events (AD-4). Declared in `terraform/transcode.tf`:
-`video-processed` bucket, least-privilege role (logs + GetObject on
-uploads + PutObject on processed), and the `transcode` function
-(python3.11, env `UPLOADS_BUCKET`/`PROCESSED_BUCKET`/`AWS_ENDPOINT_URL`).
-Verified against a real gateway upload: processed object lands under
-`processed/{videoId}/{basename}`, the metadata record stays UPLOADED,
-re-invokes are idempotent, and the run is traceable in CloudWatch Logs.
-20 new ATDD tests (74 total with the shared layer and upload handler).
-Story 1.3 remains complete: the upload journey works end-to-end through
-the gateway — `upload-handler` Lambda (raw multipart parse, UUID4 videoId
-minted once, S3 put → idempotent `video-metadata` record → deterministic
-`video.uploaded` event, all via the shared layer), `video-uploads` bucket,
-`video-bus` EventBridge bus, and API Gateway v2 with `POST /videos/upload`
-(`terraform/upload.tf`, `api_id` output). Bruno collection founded and
-passing. Next: Story 2.2, the processing state machine + event publisher
-— see `_bmad-output/`.
+Story 2.2 complete: the `processing-state-machine` drives
+UPLOADED → PROCESSING → PROCESSED via direct DynamoDB `updateItem`
+integrations with inline condition pairs mirroring the shared layer's
+legal-transition table, invokes the `transcode` worker in between, and
+ends with the `event-publisher` Lambda emitting exactly one
+`video.processed` event (deterministic UUID5 eventId) on `video-bus`.
+Declared in `terraform/processing.tf` + `terraform/processing.asl.json`:
+publisher zip/role/function, SFN execution role (least privilege:
+GetItem/UpdateItem on `video-metadata` + InvokeFunction on the two
+workers only), and the state machine. Verified live: gateway upload →
+ad-hoc `StartExecution` → record walks to PROCESSED, processed object
+byte-identical, exactly one event with the right eventId/schemaVersion,
+history shows all four task states; re-run fails at the first condition
+with no regression and no second event. 45 new tests (131 total),
+including the ASL↔transition-table mirror backstop. Story 2.1 remains
+complete: the `transcode` worker Lambda — pure S3 in → S3 out
+(demo-mode copy, no ffmpeg), no status writes, no events (AD-4),
+`terraform/transcode.tf`. Story 1.3 remains complete: the upload journey
+works end-to-end through the gateway (`terraform/upload.tf`, `api_id`
+output). Next: Story 2.3, the trigger leg (EventBridge rule →
+processing-trigger queue → shim → StartExecution) — see `_bmad-output/`.

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-18-2026 22:19
-last_updated: 08-20-2026 11:30
+last_updated: 08-20-2026 14:00
 project: serverless-video-processing
 project_key: NOKEY
 tracking_system: file-system
@@ -44,7 +44,7 @@ development_status:
 
   epic-2: in-progress
   2-1-transcode-worker-lambda-pure-s3-in-s3-out: review
-  2-2-processing-state-machine-event-publisher: backlog
+  2-2-processing-state-machine-event-publisher: review
   2-3-trigger-leg-eventbridge-rule-queue-and-shim: backlog
   epic-2-retrospective: optional
 
