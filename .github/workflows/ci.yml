@@ -42,7 +42,7 @@ jobs:
         with:
           fetch-depth: 0 # full history — scan every commit, not just HEAD
 
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITLEAKS_CONFIG: .gitleaks.toml
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # required for PR scans

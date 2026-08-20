@@ -26,7 +26,7 @@ Job graph: `gitleaks → lint → {unit-test, terraform-validate} → smoke`.
   (SHA-256 content hashes that trip `generic-api-key`).
 - **Local:** stage 1 of `scripts/ci-local.sh` — `gitleaks detect --no-banner
   --config .gitleaks.toml`. Install once with `scoop install gitleaks`.
-- **CI:** `gitleaks/gitleaks-action@v2` with `fetch-depth: 0` so every commit
+- **CI:** `gitleaks/gitleaks-action@v3` with `fetch-depth: 0` so every commit
   is scanned, not just HEAD. Hard gate — a finding fails the pipeline.
 - The floci dummy creds (`test`/`test`) need no allowlisting: they match no
   key pattern and carry no entropy.
@@ -56,7 +56,7 @@ never hardcoded.
 
 - Python 3.11 (Lambda runtime parity), installed via `astral-sh/setup-uv@v7`
 - Terraform 1.6.1 via `hashicorp/setup-terraform@v4` (matches `required_version >= 1.6.0`)
-- gitleaks via `gitleaks/gitleaks-action@v2` (locally: `scoop install gitleaks`)
+- gitleaks via `gitleaks/gitleaks-action@v3` (locally: `scoop install gitleaks`)
 - Actions are on Node-24 majors (`checkout@v5`, `setup-uv@v7`, `setup-terraform@v4`, `upload-artifact@v5`) — GitHub deprecated the Node 20 runner runtime (Sept 2025) and warns on older majors
 - ruff and pytest are pulled ad-hoc by `uv run --with` — no lockfile needed yet
 
