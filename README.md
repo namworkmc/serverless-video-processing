@@ -265,6 +265,26 @@ minted once, S3 put → idempotent `video-metadata` record → deterministic
 (`terraform/upload.tf`, `api_id` output). Bruno collection founded and
 passing.
 
+✅ **Story 1.2 complete** — `lambdas/_shared/` is the single enforcement
+point every later function imports: `status.py` (legal-transition table
+enforced via DynamoDB conditional writes — `UpdateItem` +
+`ConditionExpression`, idempotent create/re-assert), `events.py`
+(deterministic UUID5 `eventId` envelopes, fixed detail shapes),
+`errors.py` (conflict→409, unknown→404, malformed→400, else 500), and
+`clients.py` (env-driven boto3 factories — `AWS_ENDPOINT_URL`, no
+hardcoded names). The `video-metadata` table and a `smoke` Lambda fixture
+(`terraform/smoke.tf`) run the layer inside floci's real Docker runtime —
+smoke confirmed boto3 present in the floci 1.6.0 image, every scenario
+passes against the real table, and the fixture cleans up after itself.
+27 unit tests.
+
+✅ **Story 1.1 complete** — the lab substrate is reproducible: floci
+pinned to `1.6.0` in `docker-compose.yaml` (with the Docker socket
+mounted), the Phase 0 smoke resource removed so `terraform/` declares
+zero resources (substrate only), the provider `endpoints{}` skeleton
+verified, and the README quick-start documented Terraform-only — no
+`aws` CLI anywhere in setup/teardown.
+
 ⏭️ **Next:** Story 2.3 — the trigger leg (EventBridge rule →
 processing-trigger queue → shim → StartExecution). See `_bmad-output/`.
 
