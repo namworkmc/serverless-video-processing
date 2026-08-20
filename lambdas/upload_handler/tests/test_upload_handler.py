@@ -1,11 +1,11 @@
-"""Red-phase ATDD scaffolds for Story 1.3: Upload Journey Through the Gateway.
+"""Green-phase ATDD suite for Story 1.3: Upload Journey Through the Gateway.
 
 These tests encode the acceptance criteria as executable assertions.
-They are SKIPPED until the upload-handler implementation exists.
-Remove the `pytest.importorskip` line and the per-test `@pytest.mark.skip`
-decorators when starting the green-phase implementation.
+Activated for the green phase: the `pytest.importorskip` guard and the
+per-class `@pytest.mark.skip` markers from the red phase have been removed;
+assertions are unchanged from the TEA run.
 
-TDD Phase: RED
+TDD Phase: GREEN
 Story: 1.3-upload-journey-through-the-gateway
 """
 
@@ -14,14 +14,7 @@ import uuid
 
 import pytest
 
-# RED PHASE: this import will fail until lambdas/upload_handler/handler.py
-# is created. pytest.importorskip skips the entire module when missing.
-pytest.importorskip(
-    "upload_handler.handler",
-    reason="RED PHASE: upload-handler Lambda not yet implemented (Story 1.3)",
-)
-
-from upload_handler.handler import handler  # noqa: E402
+from upload_handler.handler import handler
 
 
 # ---------------------------------------------------------------------------
@@ -177,7 +170,6 @@ def deps(s3, table, eventbridge, monkeypatch):
 # 1.3-UNIT-001 [P0] Multipart parsing — raw body, never base64
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestMultipartParsing:
     def test_parses_raw_multipart_extracts_file_bytes(self, deps):
         """AC2: handler parses the raw multipart body (isBase64Encoded: false)."""
@@ -210,7 +202,6 @@ class TestMultipartParsing:
 # 1.3-UNIT-002 [P1] Title fallback
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestTitleFallback:
     def test_title_from_form_field(self, deps):
         """AC2: optional title form field is read and stored."""
@@ -240,7 +231,6 @@ class TestTitleFallback:
 # 1.3-UNIT-003 [P0] Response shape — 2xx + videoId
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestResponseShape:
     def test_returns_200_with_video_id(self, deps):
         """AC2: response is HTTP 2xx returning the minted videoId (UUID)."""
@@ -271,7 +261,6 @@ class TestResponseShape:
 # 1.3-UNIT-004 [P0] S3 side effect
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestS3SideEffect:
     def test_object_stored_in_uploads_bucket(self, deps):
         """AC2/FR-1: object exists in video-uploads bucket."""
@@ -311,7 +300,6 @@ class TestS3SideEffect:
 # 1.3-UNIT-005 [P0] DynamoDB record creation
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestDynamoRecord:
     def test_record_created_with_uploaded_status(self, deps):
         """AC2/FR-3: video-metadata record exists with status UPLOADED."""
@@ -363,7 +351,6 @@ class TestDynamoRecord:
 # 1.3-UNIT-006 [P0] EventBridge emission
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestEventEmission:
     def test_video_uploaded_event_emitted(self, deps):
         """AC2/FR-4: video.uploaded event is on the bus."""
@@ -413,13 +400,10 @@ class TestEventEmission:
 # 1.3-UNIT-007 [P0] Missing file → 400
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestMissingFile:
     def test_missing_file_part_returns_400(self, deps):
         """AC4/NFR-3: missing file → 400 {"error": ...}."""
-        # Multipart with only a title field, no file
-        _multipart_body({"title": "no file here"}, "file", "", b"")
-        # Remove the file part entirely by building without it
+        # Multipart with only a title field, no file part at all
         body_no_file = (
             f"--{BOUNDARY}\r\n"
             f'Content-Disposition: form-data; name="title"\r\n\r\n'
@@ -449,7 +433,6 @@ class TestMissingFile:
 # 1.3-UNIT-008 [P1] Unparseable multipart → 400
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestUnparseableMultipart:
     def test_garbage_body_returns_400(self, deps):
         """AC4: unparseable multipart body → 400 {"error": ...}."""
@@ -478,7 +461,6 @@ class TestUnparseableMultipart:
 # 1.3-INT-001 [P0] Full handler integration (fake services)
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestHandlerIntegration:
     def test_full_upload_journey_within_handler(self, deps):
         """AC2 end-to-end within handler boundary: multipart in →
@@ -526,10 +508,30 @@ class TestHandlerIntegration:
 
 
 # ---------------------------------------------------------------------------
+# 1.3-INT-003 [P1] Downstream failure → 500 via map_error
+# ---------------------------------------------------------------------------
+
+class TestDownstreamFailure:
+    def test_s3_failure_returns_500(self, deps):
+        """I/O matrix: a downstream service error mid-flight maps to
+        500 {"error": ...} via shared.errors.map_error."""
+        def boom(**kwargs):
+            raise RuntimeError("s3 unavailable")
+
+        deps["s3"].put_object = boom
+        body = _multipart_body({}, "file", "demo.mp4", b"data")
+
+        response = handler(_make_event(body), None)
+
+        assert response["statusCode"] == 500
+        body_json = json.loads(response["body"])
+        assert "error" in body_json
+
+
+# ---------------------------------------------------------------------------
 # 1.3-INT-002 [P2] Duplicate filename → distinct keys
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skip(reason="RED PHASE: upload-handler not implemented")
 class TestDuplicateFilename:
     def test_same_filename_produces_distinct_keys(self, deps):
         """Edge: uploading the same filename twice yields different S3 keys
@@ -544,3 +546,65 @@ class TestDuplicateFilename:
         key1 = s3.put_calls[0]["Key"]
         key2 = s3.put_calls[1]["Key"]
         assert key1 != key2
+
+
+# ---------------------------------------------------------------------------
+# 1.3-INT-004 [P1] Review guards: input hardening & publish verification
+# ---------------------------------------------------------------------------
+
+class TestReviewGuards:
+    def test_non_latin1_body_returns_400(self, deps):
+        """Body containing code points above U+00FF cannot be a raw byte
+        stream — must map to 400, not an unhandled UnicodeEncodeError."""
+        body = _multipart_body({}, "file", "demo.mp4", b"data")
+        body += "\u65e5"  # CJK char — outside latin-1
+
+        response = handler(_make_event(body), None)
+
+        assert response["statusCode"] == 400
+        assert "error" in json.loads(response["body"])
+
+    def test_zero_byte_file_part_returns_400(self, deps):
+        """An empty file part is malformed input, not a valid upload."""
+        body = _multipart_body({}, "file", "empty.mp4", b"")
+
+        response = handler(_make_event(body), None)
+
+        assert response["statusCode"] == 400
+        assert deps["s3"].put_calls == []
+
+    def test_path_traversal_filename_is_sanitized(self, deps):
+        """Client-supplied filename must not reshape the S3 key."""
+        body = _multipart_body({}, "file", "../../etc/evil.mp4", b"data")
+
+        response = handler(_make_event(body), None)
+
+        assert response["statusCode"] == 200
+        key = deps["s3"].put_calls[0]["Key"]
+        assert key.endswith("/evil.mp4")
+        assert ".." not in key
+
+    def test_dotdot_only_filename_returns_400(self, deps):
+        """A filename that sanitizes to nothing is rejected."""
+        body = _multipart_body({}, "file", "..", b"data")
+
+        response = handler(_make_event(body), None)
+
+        assert response["statusCode"] == 400
+        assert deps["s3"].put_calls == []
+
+    def test_event_publish_failure_returns_500(self, deps):
+        """EventBridge reports per-entry failures via FailedEntryCount
+        while still returning HTTP 200 — the handler must not swallow it."""
+        def failing_put(Entries):
+            return {"FailedEntryCount": len(Entries),
+                    "Entries": [{"ErrorCode": "InternalError"}
+                                for _ in Entries]}
+
+        deps["eventbridge"].put_events = failing_put
+        body = _multipart_body({}, "file", "demo.mp4", b"data")
+
+        response = handler(_make_event(body), None)
+
+        assert response["statusCode"] == 500
+        assert "error" in json.loads(response["body"])

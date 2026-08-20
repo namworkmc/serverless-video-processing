@@ -1,0 +1,35 @@
+meta {
+  name: Upload Video
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{gatewayBaseUrl}}/videos/upload
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  file: @file(sample.mp4)
+  title: My Video
+}
+
+assert {
+  res.status: eq 200
+  res.body.videoId: isDefined
+}
+
+docs {
+  ## Upload journey (Story 1.3)
+  
+  POST a multipart video to the gateway data plane. Expects 200 with the
+  minted `videoId`; the object lands in `video-uploads` under
+  `{videoId}/{filename}`, the `video-metadata` record is created with
+  status UPLOADED, and a `video.uploaded` event goes on `video-bus`.
+  
+  Set `gatewayBaseUrl` in the Local environment from the Terraform
+  `api_id` output after `terraform apply`:
+  
+      http://localhost:4566/_aws/execute-api/<api_id>/local
+}

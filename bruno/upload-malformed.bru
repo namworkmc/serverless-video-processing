@@ -1,0 +1,27 @@
+meta {
+  name: Upload Malformed (No File)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{gatewayBaseUrl}}/videos/upload
+  body: multipartForm
+  auth: none
+}
+
+body:multipart-form {
+  title: no file here
+}
+
+assert {
+  res.status: eq 400
+  res.body.error: isDefined
+}
+
+docs {
+  ## Malformed upload (Story 1.3, NFR-3 / FR-21)
+  
+  Multipart request WITHOUT a file part. The gateway must pass through
+  the handler's 400 with body `{"error": ...}` unchanged.
+}
