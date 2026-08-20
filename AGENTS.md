@@ -9,17 +9,30 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
 
 ## Workflow rules (mandatory)
 
-1. **Suggest a git worktree before changing files.** Whenever you decide to
-   change any file, first suggest to the user that the work happen in a git
-   worktree to avoid conflicting with in-flight changes. Worktrees live under
-   `.worktrees/` (gitignored), e.g.:
+1. **Worktree before work — mandatory for BMAD workflows.** Worktrees live
+   under `.worktrees/` (gitignored):
 
    ```bash
    git worktree add .worktrees/<short-topic> -b <branch-name>
    ```
 
-   Proceed in the worktree once the user agrees; if they decline, edit in the
-   main checkout. List/clean up with `git worktree list` / `git worktree remove`.
+   - **Starting any BMAD workflow** (any `bmad-*` skill is loaded/run —
+     `bmad-build`, `bmad-prd`, `bmad-architecture`,
+     `bmad-create-epics-and-stories`, `bmad-review`, …): BEFORE doing
+     anything else in the workflow — before clarifying questions, reading
+     specs, planning, or touching any file — create a worktree with a fresh
+     branch and run the entire workflow inside it. This is mandatory: do not
+     ask permission, just announce the worktree path and branch created.
+     Skip creation only if this session is already inside a worktree checkout
+     (check `git worktree list` first — never nest or duplicate worktrees).
+   - Branch naming: story implementation follows the existing
+     `feat/story-<id>-<slug>` convention; other workflows use
+     `bmad/<workflow>-<short-topic>`. Base the branch on the latest `main`
+     unless the user names a different base.
+   - **Any other file change:** first suggest a worktree; if the user
+     declines, edit in the main checkout.
+
+   List/clean up with `git worktree list` / `git worktree remove`.
 2. **Terraform reviews require the skill.** Whenever reviewing, writing, or
    debugging Terraform implementation (`terraform/*.tf`), load the
    `terraform-skill` skill first (`skill_view(name='terraform-skill')`) and
