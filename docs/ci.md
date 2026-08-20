@@ -46,6 +46,8 @@ Concurrency: one run per ref, in-progress runs cancelled.
 
 **None required.** floci uses dummy credentials (`test`/`test`), Terraform state
 is local, and the smoke invoke goes through floci's unauthenticated Lambda API.
+The `gitleaks` job passes the auto-provided `GITHUB_TOKEN` (mandatory for
+scanning pull requests) — no repository secret to configure.
 If real-AWS deployment is added later, that gets its own workflow with
 `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (or OIDC) as repository secrets —
 never hardcoded.
