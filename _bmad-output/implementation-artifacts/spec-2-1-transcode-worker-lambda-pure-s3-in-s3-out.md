@@ -2,7 +2,8 @@
 title: 'Story 2.1: Transcode Worker Lambda (pure S3 in → S3 out)'
 type: 'feature'
 created: '2026-08-20'
-status: 'ready-for-dev'
+status: 'done'
+baseline_commit: 'b4769f50801881327820c1ebb6eafd003975af8c'
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-2-context.md'
@@ -68,11 +69,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `lambdas/transcode/__init__.py`, `lambdas/transcode/handler.py` -- implement the pure worker per Code Map/I-O matrix -- FR-6, AD-4
-- [ ] `lambdas/transcode/tests/` -- conftest (copy upload_handler's) + unit tests covering the I/O matrix incl. the no-status-writes/no-events guarantee -- green ATDD
-- [ ] `terraform/transcode.tf` -- declare bucket, archive, role, function -- FR-23, AC1
-- [ ] `lambdas/README.md`, `README.md` -- document the transcode worker + ad-hoc invoke; update Status -- keep docs truthful
-- [ ] `_bmad-output/implementation-artifacts/sprint-status.yaml` -- sync `2-1-transcode-worker-lambda-pure-s3-in-s3-out` per workflow sprint-sync step (done by workflow at in-progress)
+- [x] `lambdas/transcode/__init__.py`, `lambdas/transcode/handler.py` -- implement the pure worker per Code Map/I-O matrix -- FR-6, AD-4
+- [x] `lambdas/transcode/tests/` -- conftest (copy upload_handler's) + unit tests covering the I/O matrix incl. the no-status-writes/no-events guarantee -- green ATDD
+- [x] `terraform/transcode.tf` -- declare bucket, archive, role, function -- FR-23, AC1
+- [x] `lambdas/README.md`, `README.md` -- document the transcode worker + ad-hoc invoke; update Status -- keep docs truthful
+- [x] `_bmad-output/implementation-artifacts/sprint-status.yaml` -- sync `2-1-transcode-worker-lambda-pure-s3-in-s3-out` per workflow sprint-sync step (done by workflow at in-progress)
 
 **Acceptance Criteria:**
 - Given floci running and `terraform apply`, when the environment is inspected, then the `transcode` function, its role, and the `video-processed` bucket exist (FR-23)
@@ -104,10 +105,39 @@ context:
 ## Suggested Review Order
 
 **Entry point — the pure worker**
-- The whole function: validate payload → stream copy → return domain result. [`lambdas/transcode/handler.py`](../../lambdas/transcode/handler.py)
+
+- The whole function: validate payload → stream copy → return domain result.
+  [`handler.py:94`](../../lambdas/transcode/handler.py#L94)
+
+- Validation returns the stripped value so padded fields can't leak into keys.
+  [`handler.py:67`](../../lambdas/transcode/handler.py#L67)
+
+- Deterministic processed key `processed/{videoId}/{basename}` (FR-6).
+  [`handler.py:79`](../../lambdas/transcode/handler.py#L79)
 
 **Purity guarantee (AD-4)**
-- No `shared.status` / `shared.events` import; test asserting no DDB/events client is constructed. [`lambdas/transcode/tests/test_transcode.py`](../../lambdas/transcode/tests/test_transcode.py)
+
+- AST import check + client-factory recorder: no status/events, no DDB/EventBridge client ever built.
+  [`test_transcode.py:361`](../../lambdas/transcode/tests/test_transcode.py#L361)
 
 **Terraform**
-- Least-privilege role (GetObject on uploads, PutObject on processed, logs only) and config-not-code env vars. [`terraform/transcode.tf`](../../terraform/transcode.tf)
+
+- Least-privilege role (GetObject on uploads, PutObject on processed, logs only).
+  [`transcode.tf:70`](../../terraform/transcode.tf#L70)
+
+- Function wiring: python3.11, config-not-code env vars, zip from hand-maintained source blocks.
+  [`transcode.tf:102`](../../terraform/transcode.tf#L102)
+
+- Zip layout mirrors `upload.tf`: `_shared` at root as `shared/` + `transcode/` package.
+  [`transcode.tf:12`](../../terraform/transcode.tf#L12)
+
+**Peripherals**
+
+- I/O-matrix ATDD suite incl. review-patch branches (strip, non-dict, zero-byte, unset env).
+  [`test_transcode.py:154`](../../lambdas/transcode/tests/test_transcode.py#L154)
+
+- `video-processed` bucket with `force_destroy` for lab teardown.
+  [`transcode.tf:51`](../../terraform/transcode.tf#L51)
+
+- Docs: transcode worker section, ad-hoc invoke, updated Status.
+  [`README.md`](../../README.md)

@@ -16,7 +16,8 @@ lambdas/
   smoke/              # Story 1.2 smoke fixture (ad-hoc invoke only)
   upload_handler/     # Story 1.3 upload journey (dir/package: upload_handler,
                       # Terraform function name: upload-handler)
-  transcode/          # Epic 2 (planned)
+  transcode/          # Story 2.1 transcode worker (pure S3 in -> S3 out;
+                      # dir/package/function name: transcode)
   ...
 ```
 
@@ -78,6 +79,42 @@ is reachable only at
 `http://localhost:4566/_aws/execute-api/{apiId}/{stage}/videos/upload`
 (`api_id` Terraform output; see the root README for curl/Bruno usage).
 
+## Transcode worker (Story 2.1)
+
+`transcode/` (Terraform function name `transcode`, declared in
+`terraform/transcode.tf`) is the processing leg's first worker — a PURE
+worker (AD-4): S3 object in -> S3 object out, **no** status writes, **no**
+events; the module does not even import `shared.status` or `shared.events`.
+
+1. Validates the domain payload: `videoId` + `originalKey` required
+   (missing/empty -> `MalformedInputError`); extra fields are tolerated —
+   Story 2.2's state machine passes the full `video.uploaded` detail
+   unchanged.
+2. Demo-mode transcode: streams the object body from `video-uploads` to
+   `video-processed` (no ffmpeg — real transcoding is a documented future
+   extension). Processed key shape: `processed/{videoId}/{basename}`,
+   tied to the same videoId (FR-6), deterministic — a re-invoke overwrites
+   the same key (idempotent).
+3. Returns the domain payload for the ASL result:
+   `{videoId, originalKey, processedKey, sizeBytes}`.
+
+Error semantics: this is not a client-facing function — no HTTP response
+mapping. Malformed payload raises `MalformedInputError`; S3 failures
+propagate raw. Either way the invocation fails, which is exactly what the
+ASL task needs (Story 2.2 fails the execution).
+
+Config-not-code: `UPLOADS_BUCKET`, `PROCESSED_BUCKET`, `AWS_ENDPOINT_URL`
+are all Terraform-set env vars. The role is least-privilege: logs only +
+`s3:GetObject` on `video-uploads/*` + `s3:PutObject` on
+`video-processed/*` — no DynamoDB, no EventBridge.
+
+Invoke ad-hoc (inspection only — the local aws CLI shim is broken, use
+local boto3):
+
+```bash
+python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(json.dumps(json.load(c.invoke(FunctionName='transcode', Payload=json.dumps({'videoId': '<uuid>', 'originalKey': '<uuid>/<filename>'}))['Payload']), indent=2))"
+```
+
 ## Local tests
 
 ```bash
@@ -88,8 +125,10 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt
 .venv/Scripts/python -m pytest lambdas/ -q
 ```
 
-Suites: `lambdas/_shared/tests/` (27 shared-layer tests) and
+Suites: `lambdas/_shared/tests/` (27 shared-layer tests),
 `lambdas/upload_handler/tests/` (21 upload-handler ATDD tests, activated
-from the red-phase scaffolds — assertions unchanged from the TEA run).
+from the red-phase scaffolds — assertions unchanged from the TEA run), and
+`lambdas/transcode/tests/` (20 transcode-worker ATDD tests encoding the
+Story 2.1 I/O matrix incl. the AD-4 purity guarantee).
 Each `tests/conftest.py` registers the local `_shared/` directory as the
 `shared` package so imports match the zip layout.

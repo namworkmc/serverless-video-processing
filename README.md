@@ -11,9 +11,9 @@ in setup/teardown.
 |---|---|
 | Emulator | floci (`localhost:4566`, no auth token) |
 | IaC | Terraform (AWS provider → `http://localhost:4566`) |
-| Compute | AWS Lambda (ffmpeg transcode) — planned |
-| Orchestration | Step Functions / EventBridge — bus live, processing leg planned |
-| Storage | S3 (`video-uploads`) + DynamoDB (`video-metadata`) |
+| Compute | AWS Lambda (`transcode` worker, demo-mode copy) — ffmpeg transcode planned |
+| Orchestration | Step Functions / EventBridge — bus live, state machine planned (Story 2.2) |
+| Storage | S3 (`video-uploads`, `video-processed`) + DynamoDB (`video-metadata`) |
 | Ingress | API Gateway v2 (`POST /videos/upload`) |
 
 ## Quick start
@@ -95,6 +95,25 @@ bru run --env Local
 bru run --env Local --env-var "gatewayBaseUrl=http://localhost:4566/_aws/execute-api/$API_ID/local"
 ```
 
+## Transcode worker (Story 2.1)
+
+The `transcode` Lambda (`terraform/transcode.tf`) is the processing leg's
+first worker — a PURE worker (AD-4): S3 object in → S3 object out, no
+status writes, no events. It reads the uploaded object from
+`video-uploads` and streams it to `video-processed` under
+`processed/{videoId}/{basename}` (demo-mode copy — no ffmpeg; real
+transcoding is a documented future extension), then returns
+`{videoId, originalKey, processedKey, sizeBytes}` for the state machine
+(Story 2.2). Malformed payloads (missing/empty `videoId` or
+`originalKey`) raise `MalformedInputError`; unknown source objects fail
+the invocation — either failure is exactly what the ASL task needs.
+Re-invoking with the same payload overwrites the same processed key
+(idempotent). Invoke ad-hoc via local boto3 (the aws CLI shim is broken):
+
+```bash
+python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(json.dumps(json.load(c.invoke(FunctionName='transcode', Payload=json.dumps({'videoId': '<uuid>', 'originalKey': '<uuid>/<filename>'}))['Payload']), indent=2))"
+```
+
 ## Repository layout
 
 ```
@@ -107,12 +126,21 @@ _bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 
 ## Status
 
-Story 1.3 complete: the upload journey works end-to-end through the
-gateway — `upload-handler` Lambda (raw multipart parse, UUID4 videoId
+Story 2.1 complete: the `transcode` worker Lambda exists and works
+ad-hoc — pure S3 in → S3 out (demo-mode copy, no ffmpeg), no status
+writes, no events (AD-4). Declared in `terraform/transcode.tf`:
+`video-processed` bucket, least-privilege role (logs + GetObject on
+uploads + PutObject on processed), and the `transcode` function
+(python3.11, env `UPLOADS_BUCKET`/`PROCESSED_BUCKET`/`AWS_ENDPOINT_URL`).
+Verified against a real gateway upload: processed object lands under
+`processed/{videoId}/{basename}`, the metadata record stays UPLOADED,
+re-invokes are idempotent, and the run is traceable in CloudWatch Logs.
+20 new ATDD tests (74 total with the shared layer and upload handler).
+Story 1.3 remains complete: the upload journey works end-to-end through
+the gateway — `upload-handler` Lambda (raw multipart parse, UUID4 videoId
 minted once, S3 put → idempotent `video-metadata` record → deterministic
 `video.uploaded` event, all via the shared layer), `video-uploads` bucket,
 `video-bus` EventBridge bus, and API Gateway v2 with `POST /videos/upload`
-(`terraform/upload.tf`, `api_id` output). The 21 red-phase ATDD scaffolds
-are green, plus 6 review-phase guard tests (54 tests total with the shared
-layer). Bruno collection founded and passing. Next: Epic 2, the processing
-leg — see `_bmad-output/`.
+(`terraform/upload.tf`, `api_id` output). Bruno collection founded and
+passing. Next: Story 2.2, the processing state machine + event publisher
+— see `_bmad-output/`.
