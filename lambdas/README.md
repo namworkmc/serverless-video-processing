@@ -14,7 +14,8 @@ lambdas/
     clients.py        # boto3 client factories (env-driven, config-not-code)
     tests/            # local pytest suite (never shipped in zips)
   smoke/              # Story 1.2 smoke fixture (ad-hoc invoke only)
-  upload-handler/     # Story 1.3 (planned)
+  upload_handler/     # Story 1.3 upload journey (dir/package: upload_handler,
+                      # Terraform function name: upload-handler)
   transcode/          # Epic 2 (planned)
   ...
 ```
@@ -55,15 +56,40 @@ Scenarios: `create`, `create-idempotent`, `transition-legal`,
 `transition-illegal`, `reassert`, `envelope`, `all`. The handler deletes its
 fixed test record after every run, so the table stays empty for Story 1.3.
 
+## Upload handler (Story 1.3)
+
+`upload_handler/` (Terraform function name `upload-handler`, declared in
+`terraform/upload.tf`) is the ingest leg behind the gateway route
+`POST /videos/upload`:
+
+1. Parses the multipart body RAW (floci's gateway delivers
+   `isBase64Encoded: false` — never base64) with stdlib `email.parser`.
+2. Mints `videoId` (UUID4) exactly once; the same id appears in the
+   response, the S3 key (`{videoId}/{filename}`), the record, and the event.
+3. Side effects in order: S3 `put_object` → `shared.status.create_record`
+   (idempotent UPLOADED create) → `events.put_events` with the
+   deterministic `video.uploaded` envelope on `video-bus`.
+4. Responds `200 {"videoId": ...}`; parse failures → `400 {"error": ...}`,
+   downstream failures → `500 {"error": ...}` via `shared.errors.map_error`.
+
+Config-not-code: `UPLOADS_BUCKET`, `METADATA_TABLE`, `EVENT_BUS_NAME`,
+`AWS_ENDPOINT_URL` are all Terraform-set env vars. The gateway data plane
+is reachable only at
+`http://localhost:4566/_aws/execute-api/{apiId}/{stage}/videos/upload`
+(`api_id` Terraform output; see the root README for curl/Bruno usage).
+
 ## Local tests
 
 ```bash
 # either (requirements-dev.txt is the dev dependency list):
-uv run --with pytest python -m pytest lambdas/_shared/tests -q
+uv run --with pytest python -m pytest lambdas/ -q
 # or install the dev requirements into a venv first:
 python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt
-.venv/Scripts/python -m pytest lambdas/_shared/tests -q
+.venv/Scripts/python -m pytest lambdas/ -q
 ```
 
-`tests/conftest.py` registers the local `_shared/` directory as the `shared`
-package so imports match the zip layout.
+Suites: `lambdas/_shared/tests/` (27 shared-layer tests) and
+`lambdas/upload_handler/tests/` (21 upload-handler ATDD tests, activated
+from the red-phase scaffolds — assertions unchanged from the TEA run).
+Each `tests/conftest.py` registers the local `_shared/` directory as the
+`shared` package so imports match the zip layout.
