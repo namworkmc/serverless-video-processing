@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-18-2026 22:19
-last_updated: 08-20-2026
+last_updated: 08-20-2026 11:30
 project: serverless-video-processing
 project_key: NOKEY
 tracking_system: file-system
@@ -40,7 +40,7 @@ development_status:
   1-1-lab-environment-bootstrap-floci-terraform-skeleton: review
   1-2-shared-access-layer-lambdas-_shared: review
   1-3-upload-journey-through-the-gateway: review
-  epic-1-retrospective: optional
+  epic-1-retrospective: done
 
   epic-2: in-progress
   2-1-transcode-worker-lambda-pure-s3-in-s3-out: review
@@ -59,3 +59,38 @@ development_status:
   4-3-admin-only-index-rebuild: backlog
   4-4-end-to-end-lab-verification-sm-1: backlog
   epic-4-retrospective: optional
+action_items:
+  - id: "epic-1-retro-item-1-resolve-binary-upload-gap-before-epic-2"
+    epic: 1
+    action: "Resolve binary-upload gap before Epic 2: spike floci API GW v2 multipart
+      binary transport (high-byte payloads rejected 400; valid-UTF-8 bytes silently
+      corrupted 8->4, proven live 2026-08-20); fix transport or formally document
+      text-safe-only lab limitation in README+spec; add binary probe to smoke/Bruno
+      suite"
+    owner: "Kygor"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
+  - id: "epic-1-retro-item-2-add-dynamodb-getitem-to-upload-handler-i"
+    epic: 1
+    action: "Add dynamodb:GetItem to upload-handler IAM role (terraform/upload.tf)
+      - shared layer FR-12 idempotent-create retry path issues get_item; latent on
+      floci, would fail on real AWS"
+    owner: "Kygor"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
+  - id: "epic-1-retro-item-3-reconcile-architecture-spine-ad-6-to-as"
+    epic: 1
+    action: "Reconcile ARCHITECTURE-SPINE AD-6 to as-built flattened event Detail
+      wire shape {eventId,schemaVersion,videoId,status,bucket,key,detail} - Epic 2
+      consumers must build against the flat view"
+    owner: "Kygor"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
+  - id: "epic-1-retro-item-4-fix-review-done-status-transition-gap-in"
+    epic: 1
+    action: "Fix review->done status-transition gap in build workflow sprint-sync
+      and manually mark epic-1 stories 1-1/1-2/1-3 done in sprint-status.yaml (merged
+      work stuck at review forced retro machine verdict rejected)"
+    owner: "Kygor"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
