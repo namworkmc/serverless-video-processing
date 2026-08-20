@@ -58,6 +58,11 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
    Terraform-only changes, `terraform fmt -check` + `terraform validate` is the
    floor; for Lambda changes, add ruff + pytest. The gitleaks stage is cheap
    (~1s) — run it on every change. Fix failures locally, re-run, then commit.
+4. **Conflict resolution: rebase on branches, current strategy into main.**
+   When resolving conflicts while syncing a feature/story branch with `main`,
+   prefer rebase over merge (`git rebase main` / `git pull --rebase`) to keep
+   history linear. When merging into `main`, keep the current strategy
+   (merge via PR) — never rebase `main` itself.
 
 ## Hard rules
 
