@@ -1,0 +1,23 @@
+# Gitleaks configuration — serverless-video-processing (floci lab)
+#
+# Extends the default ruleset (~150 rules: AWS keys, generic API keys,
+# private keys, JWTs, ...). Project-specific allowlist below.
+#
+# Run locally:  gitleaks detect --no-banner        (full history)
+# Wired into:   scripts/ci-local.sh stage 1, .github/workflows/ci.yml job `gitleaks`
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Project-wide allowlist (floci lab)"
+paths = [
+  # BMAD files-manifest: SHA-256 content hashes of repo files, flagged by
+  # generic-api-key. These are integrity hashes, not secrets.
+  '''_bmad/_config/files-manifest\.csv''',
+]
+
+# Note: the floci dummy credentials (aws_access_key_id='test' /
+# aws_secret_access_key='test' in lambdas/README.md and env-var lookups in
+# lambdas/_shared/clients.py) do NOT need allowlisting — 'test' carries no
+# entropy and matches no AWS key pattern, so no default rule fires on it.

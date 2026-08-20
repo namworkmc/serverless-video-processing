@@ -41,12 +41,13 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
    local validation run. Minimum gate for any change:
 
    ```bash
-   bash scripts/ci-local.sh        # full CI mirror: lint → unit-test → tf-validate → smoke
+   bash scripts/ci-local.sh        # full CI mirror: secrets-scan → lint → unit-test → tf-validate → smoke
    ```
 
    Stage-by-stage equivalents (same commands CI runs, in the same order):
 
    ```bash
+   gitleaks detect --no-banner --config .gitleaks.toml          # secrets scan (full history)
    uv run --with ruff ruff check lambdas/ --select E,F          # lint: Python
    (cd terraform && terraform fmt -check -recursive)            # lint: Terraform
    uv run --with 'pytest>=8.0' pytest lambdas/ -q               # unit tests
@@ -55,8 +56,8 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
 
    The smoke stage needs Docker; it reuses a healthy running floci. For
    Terraform-only changes, `terraform fmt -check` + `terraform validate` is the
-   floor; for Lambda changes, add ruff + pytest. Fix failures locally, re-run,
-   then commit.
+   floor; for Lambda changes, add ruff + pytest. The gitleaks stage is cheap
+   (~1s) — run it on every change. Fix failures locally, re-run, then commit.
 
 ## Hard rules
 

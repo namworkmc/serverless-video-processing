@@ -10,12 +10,29 @@ GitHub Actions pipeline for the serverless-video-processing floci lab.
 
 | Job | What it does | Gate |
 | --- | --- | --- |
+| `gitleaks` | `gitleaks detect` over full git history (`fetch-depth: 0`) with `.gitleaks.toml` | zero findings |
 | `lint` | `ruff check lambdas/ --select E,F` + `terraform fmt -check -recursive` | both must pass |
 | `unit-test` | `pytest lambdas/` — shared access layer suite (27 tests) | 100% pass |
 | `terraform-validate` | `terraform init -backend=false` + `terraform validate` | valid config |
 | `smoke` | floci via `docker compose up -d --wait` → `terraform apply` → invoke `smoke` Lambda through floci's Lambda API → assert `statusCode==200 && body.all_pass` → `terraform destroy` (always) | smoke report all_pass |
 
-Job graph: `lint → {unit-test, terraform-validate} → smoke`.
+Job graph: `gitleaks → lint → {unit-test, terraform-validate} → smoke`.
+
+## Secrets scanning (gitleaks)
+
+- **Config:** `.gitleaks.toml` — extends the default ruleset (~150 rules:
+  AWS keys, generic API keys, private keys, JWTs, …) with a project
+  allowlist. Currently allowlisted: `_bmad/_config/files-manifest.csv`
+  (SHA-256 content hashes that trip `generic-api-key`).
+- **Local:** stage 1 of `scripts/ci-local.sh` — `gitleaks detect --no-banner
+  --config .gitleaks.toml`. Install once with `scoop install gitleaks`.
+- **CI:** `gitleaks/gitleaks-action@v2` with `fetch-depth: 0` so every commit
+  is scanned, not just HEAD. Hard gate — a finding fails the pipeline.
+- The floci dummy creds (`test`/`test`) need no allowlisting: they match no
+  key pattern and carry no entropy.
+- If a real secret ever lands in history, rotate it first, then purge with
+  `git filter-repo` / BFG and force-push — gitleaks only *detects*, it does
+  not clean.
 
 ## Triggers
 
@@ -37,6 +54,7 @@ never hardcoded.
 
 - Python 3.11 (Lambda runtime parity), installed via `astral-sh/setup-uv@v7`
 - Terraform 1.6.1 via `hashicorp/setup-terraform@v4` (matches `required_version >= 1.6.0`)
+- gitleaks via `gitleaks/gitleaks-action@v2` (locally: `scoop install gitleaks`)
 - Actions are on Node-24 majors (`checkout@v5`, `setup-uv@v7`, `setup-terraform@v4`, `upload-artifact@v5`) — GitHub deprecated the Node 20 runner runtime (Sept 2025) and warns on older majors
 - ruff and pytest are pulled ad-hoc by `uv run --with` — no lockfile needed yet
 

@@ -3,6 +3,7 @@
 # ratification (Winston). Design record: _bmad-output/test-artifacts/ci-pipeline-progress.md
 #
 # Stages:
+#   gitleaks           secret scan over full git history (hard gate)
 #   lint               ruff (E,F) on lambdas/ + terraform fmt -check
 #                      (advisory: continue-on-error — best-practice only,
 #                      never blocks the pipeline)
@@ -32,10 +33,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  gitleaks:
+    name: Secrets scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # full history — scan every commit, not just HEAD
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_CONFIG: .gitleaks.toml
+
   lint:
     name: Lint (ruff + terraform fmt)
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    needs: gitleaks
     # Advisory only: lint findings are best-practice signals, not gates.
     # continue-on-error keeps the job result from cancelling downstream
     # stages (needs: lint treats this job as satisfied either way).
