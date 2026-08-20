@@ -1,0 +1,83 @@
+# Serverless Video Processing — Agent Instructions
+
+Serverless video platform (upload → transcode → status/search) running locally on
+floci (`localhost:4566`), infrastructure managed exclusively with Terraform.
+Project context already exists — read it before working, do not re-derive it:
+`README.md` (stack, upload journey, layout), `lambdas/README.md` (Lambda
+conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting),
+`_bmad-output/` (PRD, architecture spine, epics, story specs).
+
+## Workflow rules (mandatory)
+
+1. **Suggest a git worktree before changing files.** Whenever you decide to
+   change any file, first suggest to the user that the work happen in a git
+   worktree to avoid conflicting with in-flight changes. Worktrees live under
+   `.worktrees/` (gitignored), e.g.:
+
+   ```bash
+   git worktree add .worktrees/<short-topic> -b <branch-name>
+   ```
+
+   Proceed in the worktree once the user agrees; if they decline, edit in the
+   main checkout. List/clean up with `git worktree list` / `git worktree remove`.
+2. **Terraform reviews require the skill.** Whenever reviewing, writing, or
+   debugging Terraform implementation (`terraform/*.tf`), load the
+   `terraform-skill` skill first (`skill_view(name='terraform-skill')`) and
+   follow it. No Terraform review without it.
+3. **Local validation before commit/push.** Never commit or push without a green
+   local validation run. Minimum gate for any change:
+
+   ```bash
+   bash scripts/ci-local.sh        # full CI mirror: lint → unit-test → tf-validate → smoke
+   ```
+
+   Stage-by-stage equivalents (same commands CI runs, in the same order):
+
+   ```bash
+   uv run --with ruff ruff check lambdas/ --select E,F          # lint: Python
+   (cd terraform && terraform fmt -check -recursive)            # lint: Terraform
+   uv run --with 'pytest>=8.0' pytest lambdas/ -q               # unit tests
+   (cd terraform && terraform init -backend=false -input=false && terraform validate)
+   ```
+
+   The smoke stage needs Docker; it reuses a healthy running floci. For
+   Terraform-only changes, `terraform fmt -check` + `terraform validate` is the
+   floor; for Lambda changes, add ruff + pytest. Fix failures locally, re-run,
+   then commit.
+
+## Hard rules
+
+- **No `aws` CLI for infrastructure.** Provision/teardown is Terraform-only
+  (`terraform apply` / `terraform destroy` in `terraform/`). Ad-hoc Lambda
+  invokes go through floci's REST API or local boto3 (see `lambdas/README.md`).
+- floci credentials are dummy (`test`/`test`); Terraform state is local
+  (`terraform/terraform.tfstate`), no remote backend, no secrets anywhere.
+
+## Conventions (observed)
+
+- Commit messages: `type: summary`, often with story refs —
+  `feat: Story 1.2 — shared access layer (lambdas/_shared/) + smoke fixture`,
+  `ci: …`, `test: …`, `bmad: …`.
+- One directory per Lambda under `lambdas/`; all handlers import the shared
+  access layer as `from shared import status, events, errors, clients`
+  (`_shared/` is packed into each zip as `shared/` by `archive_file`).
+- Config-not-code: bucket/table/bus names and `AWS_ENDPOINT_URL` are
+  Terraform-set env vars, never hardcoded in handlers.
+- Tests live in `lambdas/<function>/tests/`; each `conftest.py` registers the
+  local `_shared/` dir as the `shared` package to mirror the zip layout.
+
+## Pitfalls
+
+- `terraform/*.zip` and `*.tfstate*` are generated — never hand-edit
+  (gitignored; zips rebuild via `archive_file` on apply).
+- floci has **no `UpdateStateMachine`**: ASL changes need
+  `terraform apply -replace=aws_sfn_state_machine.<name>`.
+- Every AWS service used must be listed in the provider `endpoints{}` block in
+  `terraform/providers.tf`, or applies fail with `InvalidClientTokenId` 403.
+- API Gateway v2 data plane resolves only at
+  `http://localhost:4566/_aws/execute-api/{apiId}/{stage}/...` — the
+  Terraform invoke URL output does not resolve locally.
+- `docker-compose.yaml` must mount the Docker socket or no Lambda will run.
+- EventBridge cannot target Step Functions directly on floci, and SFN's
+  `events:putEvents` direct integration is unsupported — use shim/publisher
+  Lambdas (architecture spine records these gaps).
