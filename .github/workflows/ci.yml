@@ -24,8 +24,24 @@ name: CI
 on:
   push:
     branches: [main]
+    # Skip docs-only pushes (README, BMAD framework/output, docs). Code,
+    # terraform, scripts, and workflow changes always trigger. Note:
+    # paths-ignore is OR-based — a commit touching any non-ignored path
+    # still runs CI. workflow_dispatch below stays unfiltered for manual runs.
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+      - "_bmad/**"
+      - "_bmad-output/**"
+      - "**.md"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
+      - "_bmad/**"
+      - "_bmad-output/**"
+      - "**.md"
   workflow_dispatch:
 
 concurrency:

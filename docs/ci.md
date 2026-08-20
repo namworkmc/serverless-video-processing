@@ -40,6 +40,13 @@ Job graph: `gitleaks → lint → {unit-test, terraform-validate} → smoke`.
 - Pull requests targeting `main`
 - Manual (`workflow_dispatch`)
 
+**Path filtering:** pushes and PRs are filtered with `paths-ignore` —
+changes that touch *only* documentation (`README.md`, `docs/**`,
+`_bmad/**`, `_bmad-output/**`, any `**.md`) skip CI entirely. Any commit
+touching code, Terraform, scripts, or the workflow itself still triggers
+the full pipeline. `workflow_dispatch` is unfiltered, so a manual run
+always works regardless of what changed.
+
 Concurrency: one run per ref, in-progress runs cancelled.
 
 ## Secrets
