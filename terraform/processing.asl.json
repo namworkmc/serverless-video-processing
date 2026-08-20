@@ -1,0 +1,69 @@
+{
+  "Comment": "Processing leg (Story 2.2, AD-4): status-first ordering is structural. UPLOADED -> PROCESSING -> PROCESSED via direct DynamoDB integrations, transcode worker in between, terminal video.processed published last. Condition pairs mirror lambdas/_shared/status.py LEGAL_TRANSITIONS exactly. FLOCI SHAPE GAP: floci's lambda:invoke returns the Lambda result DIRECTLY as the task result (no {Payload: ...} wrapper like real AWS) — verified by probe 2026-08-20 — so the Transcode task uses ResultPath only, no ResultSelector; on real AWS a ResultSelector unwrapping $.Payload.* would be required.",
+  "StartAt": "MarkProcessing",
+  "States": {
+    "MarkProcessing": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${table_name}",
+        "Key": {
+          "videoId": { "S.$": "$.videoId" }
+        },
+        "UpdateExpression": "SET #s = :next, updatedAt = :updatedAt",
+        "ConditionExpression": "#s = :expected",
+        "ExpressionAttributeNames": { "#s": "status" },
+        "ExpressionAttributeValues": {
+          ":expected": { "S": "UPLOADED" },
+          ":next": { "S": "PROCESSING" },
+          ":updatedAt": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Transcode"
+    },
+    "Transcode": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${transcode_arn}",
+        "Payload": {
+          "videoId.$": "$.videoId",
+          "originalKey.$": "$.key"
+        }
+      },
+      "ResultPath": "$",
+      "Next": "MarkProcessed"
+    },
+    "MarkProcessed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "${table_name}",
+        "Key": {
+          "videoId": { "S.$": "$.videoId" }
+        },
+        "UpdateExpression": "SET #s = :next, updatedAt = :updatedAt, processedKey = :pk",
+        "ConditionExpression": "#s = :expected",
+        "ExpressionAttributeNames": { "#s": "status" },
+        "ExpressionAttributeValues": {
+          ":expected": { "S": "PROCESSING" },
+          ":next": { "S": "PROCESSED" },
+          ":updatedAt": { "S.$": "$$.State.EnteredTime" },
+          ":pk": { "S.$": "$.processedKey" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "PublishProcessed"
+    },
+    "PublishProcessed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${publisher_arn}",
+        "Payload.$": "$"
+      },
+      "End": true
+    }
+  }
+}

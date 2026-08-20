@@ -7,7 +7,7 @@
 [![floci](https://img.shields.io/badge/emulator-floci-4A90D9?logo=docker&logoColor=white)](https://github.com/floci-io/floci)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](terraform/)
 [![Python](https://img.shields.io/badge/Lambda-Python%203.11-3776AB?logo=python&logoColor=white)](lambdas/)
-[![Tests](https://img.shields.io/badge/tests-74%20passing-brightgreen?logo=pytest&logoColor=white)](lambdas/)
+[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen?logo=pytest&logoColor=white)](lambdas/)
 [![aws cli](https://img.shields.io/badge/aws%20cli-not%20used-red?logo=awslambda&logoColor=white)](#-stack)
 
 *Everything runs on `localhost:4566` — no AWS account, no cloud bill, no `aws cli`.*
@@ -32,15 +32,19 @@ flowchart LR
     UH -->|put object| S3U[(S3<br/>video-uploads)]
     UH -->|record UPLOADED| DDB[(DynamoDB<br/>video-metadata)]
     UH -->|video.uploaded| EB{{EventBridge<br/>video-bus}}
-    EB -.->|Story 2.2| SFN[Step Functions<br/>state machine]
-    SFN -.-> TC[⚡ transcode<br/>Lambda]
+    EB -.->|Story 2.3| SFN[Step Functions<br/>state machine]
+    SFN -->|status walk| DDB
+    SFN --> TC[⚡ transcode<br/>Lambda]
     S3U -->|get object| TC
     TC -->|put object| S3P[(S3<br/>video-processed)]
+    SFN --> EP[⚡ event-publisher<br/>Lambda]
+    EP -->|video.processed| EB
 
     style C fill:#2d333b,stroke:#539bf5,color:#adbac7
     style GW fill:#2d333b,stroke:#539bf5,color:#adbac7
     style UH fill:#2d333b,stroke:#57ab5a,color:#adbac7
     style TC fill:#2d333b,stroke:#57ab5a,color:#adbac7
+    style EP fill:#2d333b,stroke:#57ab5a,color:#adbac7
     style S3U fill:#2d333b,stroke:#c69026,color:#adbac7
     style S3P fill:#2d333b,stroke:#c69026,color:#adbac7
     style DDB fill:#2d333b,stroke:#c69026,color:#adbac7
@@ -49,8 +53,8 @@ flowchart LR
 ```
 
 > [!NOTE]
-> Dashed edges are **planned** (Story 2.2 — processing state machine + event
-> publisher). Solid edges are live today.
+> The dashed edge is **planned** (Story 2.3 — trigger leg: EventBridge rule →
+> shim → StartExecution). Solid edges are live today.
 
 ## 🧱 Stack
 
@@ -58,8 +62,8 @@ flowchart LR
 |---|---|
 | 🖥️ Emulator | floci (`localhost:4566`, no auth token) |
 | 🏗️ IaC | Terraform (AWS provider → `http://localhost:4566`) |
-| ⚡ Compute | AWS Lambda (`transcode` worker, demo-mode copy) — ffmpeg transcode planned |
-| 🎼 Orchestration | Step Functions / EventBridge — bus live, state machine planned (Story 2.2) |
+| ⚡ Compute | AWS Lambda (`transcode` worker, demo-mode copy; `event-publisher`) — ffmpeg transcode planned |
+| 🎼 Orchestration | Step Functions (`processing-state-machine`) + EventBridge (`video-bus`) |
 | 💾 Storage | S3 (`video-uploads`, `video-processed`) + DynamoDB (`video-metadata`) |
 | 🚪 Ingress | API Gateway v2 (`POST /videos/upload`) |
 
@@ -166,6 +170,54 @@ Re-invoking with the same payload overwrites the same processed key
 > python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(json.dumps(json.load(c.invoke(FunctionName='transcode', Payload=json.dumps({'videoId': '<uuid>', 'originalKey': '<uuid>/<filename>'}))['Payload']), indent=2))"
 > ```
 
+## Processing state machine (Story 2.2)
+
+The `processing-state-machine` (`terraform/processing.tf` +
+`terraform/processing.asl.json`) drives the status walk via **direct
+service integrations** — status-first ordering is structural, in the ASL
+(AD-4):
+
+```
+MarkProcessing  Task(dynamodb:updateItem, condition #s = UPLOADED → PROCESSING)
+Transcode       Task(lambda:invoke transcode)
+MarkProcessed   Task(dynamodb:updateItem, condition #s = PROCESSING → PROCESSED,
+                     also SETs processedKey + updatedAt)
+PublishProcessed Task(lambda:invoke event-publisher)
+```
+
+The ASL's inline condition pairs mirror the shared layer's
+legal-transition table (`lambdas/_shared/status.py`) exactly — a
+transition-table change is one coordinated ASL + shared-layer change
+(backstopped by `lambdas/event_publisher/tests/test_asl_definition.py`).
+Input contract = the `video.uploaded` detail
+`{videoId, status, bucket, key}` (Story 2.3's shim will pass exactly
+that). Any task failure fails the execution — no Catch/Retry — so a
+re-run for an already-PROCESSED video fails at the first condition with
+no status regression and no second event (FR-11 via ASL).
+
+The `event-publisher` Lambda is the **sole constructor** of the
+`video.processed` envelope (AD-4/AD-6): the ASL passes it only the
+transcode result `{videoId, originalKey, processedKey, sizeBytes}`; the
+envelope (deterministic UUID5 `eventId` of `(videoId, PROCESSED)`,
+`schemaVersion`, fixed detail shape) is built via the shared layer, with
+the detail's `bucket` from its `PROCESSED_BUCKET` env var. Wire Detail
+mirrors the upload handler's flat shape.
+
+Start an execution ad-hoc via local boto3 (the aws CLI shim is broken):
+
+```bash
+python -c "import boto3, json; c = boto3.client('stepfunctions', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(c.start_execution(stateMachineArn='arn:aws:states:us-east-1:000000000000:stateMachine:processing-state-machine', input=json.dumps({'videoId': '<uuid>', 'status': 'UPLOADED', 'bucket': 'video-uploads', 'key': '<uuid>/<filename>'})))"
+```
+
+**floci platform facts (binding):**
+
+- floci has **no `UpdateStateMachine`** — any ASL change requires
+  `terraform apply -replace=aws_sfn_state_machine.processing`.
+- floci's `lambda:invoke` returns the Lambda result **directly** as the
+  task result — no `{Payload: ...}` wrapper like real AWS (probe-verified
+  2026-08-20). The Transcode task therefore uses `ResultPath` only; on
+  real AWS a `ResultSelector` unwrapping `$.Payload.*` would be required.
+
 ## 📁 Repository layout
 
 ```
@@ -177,6 +229,22 @@ _bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 ```
 
 ## 📊 Status
+
+✅ **Story 2.2 complete** — the `processing-state-machine` drives
+UPLOADED → PROCESSING → PROCESSED via direct DynamoDB `updateItem`
+integrations with inline condition pairs mirroring the shared layer's
+legal-transition table, invokes the `transcode` worker in between, and
+ends with the `event-publisher` Lambda emitting exactly one
+`video.processed` event (deterministic UUID5 eventId) on `video-bus`.
+Declared in `terraform/processing.tf` + `terraform/processing.asl.json`:
+publisher zip/role/function, SFN execution role (least privilege:
+GetItem/UpdateItem on `video-metadata` + InvokeFunction on the two
+workers only), and the state machine. Verified live: gateway upload →
+ad-hoc `StartExecution` → record walks to PROCESSED, processed object
+byte-identical, exactly one event with the right eventId/schemaVersion,
+history shows all four task states; re-run fails at the first condition
+with no regression and no second event. 45 new tests (131 total),
+including the ASL↔transition-table mirror backstop.
 
 ✅ **Story 2.1 complete** — the `transcode` worker Lambda exists and works
 ad-hoc: pure S3 in → S3 out (demo-mode copy, no ffmpeg), no status
@@ -197,8 +265,8 @@ minted once, S3 put → idempotent `video-metadata` record → deterministic
 (`terraform/upload.tf`, `api_id` output). Bruno collection founded and
 passing.
 
-⏭️ **Next:** Story 2.2 — the processing state machine + event publisher.
-See `_bmad-output/`.
+⏭️ **Next:** Story 2.3 — the trigger leg (EventBridge rule →
+processing-trigger queue → shim → StartExecution). See `_bmad-output/`.
 
 ---
 

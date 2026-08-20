@@ -18,6 +18,9 @@ lambdas/
                       # Terraform function name: upload-handler)
   transcode/          # Story 2.1 transcode worker (pure S3 in -> S3 out;
                       # dir/package/function name: transcode)
+  event_publisher/    # Story 2.2 event publisher (sole constructor of the
+                      # video.processed envelope; dir/package: event_publisher,
+                      # Terraform function name: event-publisher)
   ...
 ```
 
@@ -115,6 +118,39 @@ local boto3):
 python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(json.dumps(json.load(c.invoke(FunctionName='transcode', Payload=json.dumps({'videoId': '<uuid>', 'originalKey': '<uuid>/<filename>'}))['Payload']), indent=2))"
 ```
 
+## Event publisher (Story 2.2)
+
+`event_publisher/` (Terraform function name `event-publisher`, declared in
+`terraform/processing.tf`) is the processing state machine's terminal task
+and the **sole constructor** of the `video.processed` envelope (AD-4/AD-6):
+
+1. Validates the domain payload: `videoId` + `originalKey` +
+   `processedKey` required (missing/empty -> `MalformedInputError`); the
+   ASL passes it the transcode result
+   `{videoId, originalKey, processedKey, sizeBytes}`.
+2. Builds the envelope via the shared layer:
+   `events.build_envelope(EVENT_PROCESSED, processed_detail(...))` —
+   deterministic UUID5 `eventId` of `(videoId, PROCESSED)`, `schemaVersion`,
+   fixed detail shape. The detail's `bucket` comes from the
+   `PROCESSED_BUCKET` env var, not the ASL (the ASL carries domain payload
+   only).
+3. Publishes exactly one entry on `video-bus` with the flat wire Detail
+   (`{**envelope, **envelope["detail"]}`, mirroring the upload handler).
+   `FailedEntryCount > 0` raises — a dropped terminal event must not
+   masquerade as success.
+4. Returns the envelope for the ASL result.
+
+No DynamoDB access of any kind — the module does not import
+`shared.status` and never constructs a DDB client (enforced by AST +
+client-recorder tests). Error semantics mirror the transcode worker:
+malformed payload raises `MalformedInputError`, a rejected entry raises
+`RuntimeError`; either fails the invocation, which fails the ASL execution.
+
+Config-not-code: `PROCESSED_BUCKET`, `EVENT_BUS_NAME`, `AWS_ENDPOINT_URL`
+are all Terraform-set env vars. The role is least-privilege: logs +
+`events:PutEvents` on `video-bus` only. Invoked only by the state machine
+— no ad-hoc invoke needed (see the root README for `StartExecution`).
+
 ## Local tests
 
 ```bash
@@ -127,8 +163,13 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt
 
 Suites: `lambdas/_shared/tests/` (27 shared-layer tests),
 `lambdas/upload_handler/tests/` (21 upload-handler ATDD tests, activated
-from the red-phase scaffolds — assertions unchanged from the TEA run), and
-`lambdas/transcode/tests/` (20 transcode-worker ATDD tests encoding the
-Story 2.1 I/O matrix incl. the AD-4 purity guarantee).
+from the red-phase scaffolds — assertions unchanged from the TEA run),
+`lambdas/transcode/tests/` (32 transcode-worker ATDD tests encoding the
+Story 2.1 I/O matrix incl. the AD-4 purity guarantee), and
+`lambdas/event_publisher/tests/` (45 tests: the Story 2.2 I/O matrix incl.
+the AD-4/AD-6 purity probes, plus `test_asl_definition.py` — the
+ASL↔transition-table mirror backstop that parses
+`terraform/processing.asl.json` and asserts its condition pairs against
+`shared.status.LEGAL_TRANSITIONS`).
 Each `tests/conftest.py` registers the local `_shared/` directory as the
 `shared` package so imports match the zip layout.
