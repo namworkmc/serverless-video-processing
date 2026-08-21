@@ -40,7 +40,7 @@ import logging
 import os
 
 from shared import clients, events
-from shared.errors import MalformedInputError
+from shared.errors import require_field
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -74,29 +74,18 @@ def _event_bus_name():
 
 
 # ---------------------------------------------------------------------------
-# Payload validation
+# Payload validation — shared layer (require_field strips whitespace so
+# padded fields cannot leak into the event detail).
 # ---------------------------------------------------------------------------
-
-def _require_field(event, name):
-    """Return a non-empty string field or raise MalformedInputError.
-
-    Returns the STRIPPED value so whitespace-padded fields cannot leak
-    into the event detail.
-    """
-    value = event.get(name) if isinstance(event, dict) else None
-    if not isinstance(value, str) or not value.strip():
-        raise MalformedInputError(f"missing or empty required field: {name}")
-    return value.strip()
-
 
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
 
 def handler(event, context):  # noqa: ARG001 - Lambda signature
-    video_id = _require_field(event, "videoId")
-    original_key = _require_field(event, "originalKey")
-    processed_key = _require_field(event, "processedKey")
+    video_id = require_field(event, "videoId")
+    original_key = require_field(event, "originalKey")
+    processed_key = require_field(event, "processedKey")
 
     # Sole constructor of the video.processed envelope (AD-6): detail shape
     # fixed by the shared layer; bucket from env (config-not-code, NFR-4).

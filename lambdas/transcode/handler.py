@@ -30,7 +30,7 @@ import logging
 import os
 
 from shared import clients
-from shared.errors import MalformedInputError
+from shared.errors import MalformedInputError, require_field
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -61,20 +61,9 @@ def _processed_bucket():
 
 
 # ---------------------------------------------------------------------------
-# Payload validation
+# Payload validation — shared layer (require_field strips whitespace so
+# padded fields cannot leak into S3 keys or the ASL result payload).
 # ---------------------------------------------------------------------------
-
-def _require_field(event, name):
-    """Return a non-empty string field or raise MalformedInputError.
-
-    Returns the STRIPPED value so whitespace-padded fields cannot leak
-    into S3 keys or the ASL result payload.
-    """
-    value = event.get(name) if isinstance(event, dict) else None
-    if not isinstance(value, str) or not value.strip():
-        raise MalformedInputError(f"missing or empty required field: {name}")
-    return value.strip()
-
 
 def _processed_key(video_id, original_key):
     """`processed/{videoId}/{basename}` — basename is the last path
@@ -92,8 +81,8 @@ def _processed_key(video_id, original_key):
 # ---------------------------------------------------------------------------
 
 def handler(event, context):  # noqa: ARG001 - Lambda signature
-    video_id = _require_field(event, "videoId")
-    original_key = _require_field(event, "originalKey")
+    video_id = require_field(event, "videoId")
+    original_key = require_field(event, "originalKey")
     processed_key = _processed_key(video_id, original_key)
 
     # Demo-mode transcode: stream the source object body straight into the

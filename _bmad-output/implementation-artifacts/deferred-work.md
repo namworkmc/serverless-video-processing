@@ -29,3 +29,7 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-3-trigger-leg-eventbridge-rule-queue-and-shim.md`
   summary: Consolidate the ClientError-code duck-typing pattern — shared.errors.is_conditional_check_failed and the shim's _is_execution_already_exists — into one shared helper
   evidence: Story 2.3 review (blind-hunter layer): duplicated type(exc).__name__ pattern; this story's spec capped the shared-layer change at the single states_client() factory
+
+## Resolved
+
+- 2026-08-21 (retro action-item batch, branch `bmad/retro-action-items`): the transcode / state-machine / trigger-leg smoke scenarios (now in `lambdas/smoke/handler.py`, gated by ci-local.sh stage 5), the `shared.clients` service-name unit tests, the ClientError duck-typing consolidation (`shared.errors.is_client_error_code`), the duplicated `_require_field` consolidation (`shared.errors.require_field`), and the trigger-leg README/lambdas-README documentation. The updatedAt-format and archive-provider entries remain open.

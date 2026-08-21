@@ -29,23 +29,23 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-18-2026 22:19
-last_updated: 08-21-2026 18:45
+last_updated: 08-21-2026 21:45
 project: serverless-video-processing
 project_key: NOKEY
 tracking_system: file-system
 story_location: 
   E:/Projects/serverless-video-processing/_bmad-output/implementation-artifacts
 development_status:
-  epic-1: in-progress
-  1-1-lab-environment-bootstrap-floci-terraform-skeleton: review
-  1-2-shared-access-layer-lambdas-_shared: review
-  1-3-upload-journey-through-the-gateway: review
+  epic-1: done
+  1-1-lab-environment-bootstrap-floci-terraform-skeleton: done
+  1-2-shared-access-layer-lambdas-_shared: done
+  1-3-upload-journey-through-the-gateway: done
   epic-1-retrospective: done
 
-  epic-2: in-progress
-  2-1-transcode-worker-lambda-pure-s3-in-s3-out: review
-  2-2-processing-state-machine-event-publisher: review
-  2-3-trigger-leg-eventbridge-rule-queue-and-shim: review
+  epic-2: done
+  2-1-transcode-worker-lambda-pure-s3-in-s3-out: done
+  2-2-processing-state-machine-event-publisher: done
+  2-3-trigger-leg-eventbridge-rule-queue-and-shim: done
   epic-2-retrospective: done
 
   epic-3: backlog
@@ -68,7 +68,7 @@ action_items:
       text-safe-only lab limitation in README+spec; add binary probe to smoke/Bruno
       suite"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
   - id: "epic-1-retro-item-2-add-dynamodb-getitem-to-upload-handler-i"
     epic: 1
@@ -76,7 +76,7 @@ action_items:
       - shared layer FR-12 idempotent-create retry path issues get_item; latent on
       floci, would fail on real AWS"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
   - id: "epic-1-retro-item-3-reconcile-architecture-spine-ad-6-to-as"
     epic: 1
@@ -84,7 +84,7 @@ action_items:
       wire shape {eventId,schemaVersion,videoId,status,bucket,key,detail} - Epic 2
       consumers must build against the flat view"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
   - id: "epic-1-retro-item-4-fix-review-done-status-transition-gap-in"
     epic: 1
@@ -92,21 +92,21 @@ action_items:
       and manually mark epic-1 stories 1-1/1-2/1-3 done in sprint-status.yaml (merged
       work stuck at review forced retro machine verdict rejected)"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-1-retro-2026-08-20.md"
   - id: "epic-2-retro-item-5-strip-asl-input-values-in-sfn-trigger-sh"
     epic: 2
     action: "Strip ASL input values in sfn-trigger-shim (handler.py:148) so whitespace-padded
       event fields cannot start an execution that fails mid-flight after ack"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-08-21.md"
   - id: "epic-2-retro-item-6-consolidate-duplicated-_require_field-va"
     epic: 2
     action: "Consolidate duplicated _require_field validators (transcode + event_publisher)
       and ClientError-code duck-typing into the shared layer"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-08-21.md"
   - id: "epic-2-retro-item-7-add-runtime-smoke-scenarios-transcode-st"
     epic: 2
@@ -114,21 +114,21 @@ action_items:
       leg) + shared.clients service-name unit tests before Epic 3 builds consumers
       on epic-2 wiring"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-08-21.md"
   - id: "epic-2-retro-item-8-trigger-leg-readme-update-solid-diagram"
     epic: 2
     action: "Trigger-leg README update: solid diagram edge, auto-process flow, shim
       dedupe semantics, Status refresh"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-08-21.md"
   - id: "epic-2-retro-item-9-decide-retry-failed-path-stance-before-e"
     epic: 2
     action: "Decide retry/FAILED-path stance before Epic 4 SM-1: accept transient-failure
       ceilings as documented lab limitations or design FAILED path + re-drive"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-08-21.md"
   - id: "epic-2-retro-item-10-close-review-to-done-status-transition-g"
     epic: 2
@@ -136,5 +136,5 @@ action_items:
       add story-status flag to sprint_status.py or transition merged stories to done
       in build workflow sprint-sync"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-2-retro-2026-08-21.md"

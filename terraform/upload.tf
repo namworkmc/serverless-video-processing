@@ -100,6 +100,7 @@ resource "aws_iam_role_policy" "upload_handler" {
         Effect = "Allow"
         Action = [
           "dynamodb:PutItem",
+          "dynamodb:GetItem",
         ]
         Resource = aws_dynamodb_table.video_metadata.arn
       },

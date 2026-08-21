@@ -39,7 +39,7 @@ import os
 import re
 
 from shared import clients
-from shared.errors import MalformedInputError
+from shared.errors import MalformedInputError, is_client_error_code
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -83,10 +83,10 @@ def _state_machine_arn():
 # ---------------------------------------------------------------------------
 
 def _is_execution_already_exists(exc):
-    """Duck-typed like shared.errors.is_conditional_check_failed: boto3
-    raises a dynamically generated ClientError subclass named after the
-    error code, so the class name is the stable signal."""
-    return type(exc).__name__ == "ExecutionAlreadyExists"
+    """Duck-typed via the shared layer: boto3 raises a dynamically
+    generated ClientError subclass named after the error code, so the
+    class name is the stable signal."""
+    return is_client_error_code(exc, "ExecutionAlreadyExists")
 
 
 def _parse_detail(body_obj):
@@ -145,7 +145,11 @@ def _process_record(record):
             "skipping malformed record: missing or empty fields %s", missing)
         return "skipped"
 
-    asl_input = {name: detail[name] for name in _ASL_INPUT_FIELDS}
+    # Strip the values too (not just validate them): a whitespace-padded
+    # field would otherwise start an execution that fails mid-flight at
+    # MarkProcessing's DynamoDB Key match with the record already acked.
+    # Same normalization as the transcode/publisher validators.
+    asl_input = {name: detail[name].strip() for name in _ASL_INPUT_FIELDS}
 
     try:
         _states_client().start_execution(

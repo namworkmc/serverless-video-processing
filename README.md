@@ -7,7 +7,7 @@
 [![floci](https://img.shields.io/badge/emulator-floci-4A90D9?logo=docker&logoColor=white)](https://github.com/floci-io/floci)
 [![Terraform](https://img.shields.io/badge/IaC-Terraform-7B42BC?logo=terraform&logoColor=white)](terraform/)
 [![Python](https://img.shields.io/badge/Lambda-Python%203.11-3776AB?logo=python&logoColor=white)](lambdas/)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen?logo=pytest&logoColor=white)](lambdas/)
+[![Tests](https://img.shields.io/badge/tests-178%20passing-brightgreen?logo=pytest&logoColor=white)](lambdas/)
 [![aws cli](https://img.shields.io/badge/aws%20cli-not%20used-red?logo=awslambda&logoColor=white)](#-stack)
 
 *Everything runs on `localhost:4566` — no AWS account, no cloud bill, no `aws cli`.*
@@ -32,7 +32,9 @@ flowchart LR
     UH -->|put object| S3U[(S3<br/>video-uploads)]
     UH -->|record UPLOADED| DDB[(DynamoDB<br/>video-metadata)]
     UH -->|video.uploaded| EB{{EventBridge<br/>video-bus}}
-    EB -.->|Story 2.3| SFN[Step Functions<br/>state machine]
+    EB -->|video.uploaded rule| Q[(SQS<br/>processing-trigger-queue)]
+    Q --> SH[⚡ sfn-trigger-shim<br/>Lambda]
+    SH -->|StartExecution<br/>eb-{eventId}| SFN[Step Functions<br/>state machine]
     SFN -->|status walk| DDB
     SFN --> TC[⚡ transcode<br/>Lambda]
     S3U -->|get object| TC
@@ -45,16 +47,19 @@ flowchart LR
     style UH fill:#2d333b,stroke:#57ab5a,color:#adbac7
     style TC fill:#2d333b,stroke:#57ab5a,color:#adbac7
     style EP fill:#2d333b,stroke:#57ab5a,color:#adbac7
+    style SH fill:#2d333b,stroke:#57ab5a,color:#adbac7
     style S3U fill:#2d333b,stroke:#c69026,color:#adbac7
     style S3P fill:#2d333b,stroke:#c69026,color:#adbac7
     style DDB fill:#2d333b,stroke:#c69026,color:#adbac7
     style EB fill:#2d333b,stroke:#986ee2,color:#adbac7
     style SFN fill:#2d333b,stroke:#986ee2,color:#adbac7
+    style Q fill:#2d333b,stroke:#986ee2,color:#adbac7
 ```
 
 > [!NOTE]
-> The dashed edge is **planned** (Story 2.3 — trigger leg: EventBridge rule →
-> shim → StartExecution). Solid edges are live today.
+> Every edge is live. The trigger leg (rule → queue → shim) exists
+> because floci's EventBridge cannot target Step Functions directly —
+> the shim is the workaround (Story 2.3, AD-5).
 
 ## 🧱 Stack
 
@@ -62,8 +67,8 @@ flowchart LR
 |---|---|
 | 🖥️ Emulator | floci (`localhost:4566`, no auth token) |
 | 🏗️ IaC | Terraform (AWS provider → `http://localhost:4566`) |
-| ⚡ Compute | AWS Lambda (`transcode` worker, demo-mode copy; `event-publisher`) — ffmpeg transcode planned |
-| 🎼 Orchestration | Step Functions (`processing-state-machine`) + EventBridge (`video-bus`) |
+| ⚡ Compute | AWS Lambda (`transcode` worker, demo-mode copy; `event-publisher`; `sfn-trigger-shim`) — ffmpeg transcode planned |
+| 🎼 Orchestration | Step Functions (`processing-state-machine`) + EventBridge (`video-bus`) + SQS (`processing-trigger-queue`) |
 | 💾 Storage | S3 (`video-uploads`, `video-processed`) + DynamoDB (`video-metadata`) |
 | 🚪 Ingress | API Gateway v2 (`POST /videos/upload`) |
 
@@ -131,6 +136,14 @@ unparseable body, empty file, invalid filename) return `400 {"error": ...}`.
 >   is canonical for consumers; the nested `detail` object stays intact for
 >   envelope-shaped readers. Detail keys must never collide with envelope
 >   keys (`eventId`, `schemaVersion`).
+> - **Text-safe payloads only (floci 1.6.0).** The floci 1.6.0 gateway
+>   corrupts binary multipart bodies (it decodes the body as a UTF-8
+>   string — high-byte payloads are rejected, valid-UTF-8 byte sequences
+>   silently shrink). Uploads through the gateway must be text-safe;
+>   real binary video bytes are unverified end-to-end through the
+>   gateway. floci 1.7.0 fixes this (base64-encodes non-text bodies,
+>   `isBase64Encoded: true` — real-AWS behavior); the bump is tracked
+>   before Epic 4's end-to-end verification.
 
 ### 📮 Bruno collection
 
@@ -190,7 +203,7 @@ legal-transition table (`lambdas/_shared/status.py`) exactly — a
 transition-table change is one coordinated ASL + shared-layer change
 (backstopped by `lambdas/event_publisher/tests/test_asl_definition.py`).
 Input contract = the `video.uploaded` detail
-`{videoId, status, bucket, key}` (Story 2.3's shim will pass exactly
+`{videoId, status, bucket, key}` (Story 2.3's shim passes exactly
 that). Any task failure fails the execution — no Catch/Retry — so a
 re-run for an already-PROCESSED video fails at the first condition with
 no status regression and no second event (FR-11 via ASL).
@@ -218,6 +231,42 @@ python -c "import boto3, json; c = boto3.client('stepfunctions', endpoint_url='h
   2026-08-20). The Transcode task therefore uses `ResultPath` only; on
   real AWS a `ResultSelector` unwrapping `$.Payload.*` would be required.
 
+> [!WARNING]
+> **Retry/FAILED-path stance (accepted lab limitation).** The ASL has no
+> Catch/Retry: a transient publisher failure loses the terminal event,
+> and a transient mid-execution failure strands the record at
+> `PROCESSING` — neither is recoverable via the trigger leg's dedupe
+> (the execution name is already taken). Accepted as documented lab
+> limitations; a FAILED path + re-drive mechanism is a future design
+> decision (tracked before Epic 4's SM-1 verification).
+
+## 🔁 Trigger leg (Story 2.3)
+
+Uploads now **auto-process**: the `video.uploaded` event drives the
+state machine with no manual `StartExecution`. floci's EventBridge cannot
+target Step Functions directly, so the leg is
+(`terraform/trigger.tf`):
+
+```
+video.uploaded on video-bus
+  → EventBridge rule (video-uploaded-to-processing-trigger)
+  → processing-trigger-queue (SQS)
+  → sfn-trigger-shim Lambda (event-source mapping, batch_size=1)
+  → StartExecution eb-{eventId}
+```
+
+The shim parses the SQS body (the full EventBridge event), validates the
+flat detail (`eventId` + the four ASL input fields, whitespace-stripped),
+and starts the execution with **exactly** the ASL input contract
+`{videoId, status, bucket, key}`. Dedupe is by construction: the
+execution name `eb-{eventId}` derives from the deterministic UUID5
+`eventId` (never the EventBridge top-level `id` — random per emission on
+real AWS), so a republish, SQS retry, or redelivery hits
+`ExecutionAlreadyExists`, which the shim treats as success (acks the
+message). Malformed records are logged and acked (skipped) — never
+retried, since a deterministic poison message would retry forever; real
+`StartExecution` errors raise so the ESM retries.
+
 ## 📁 Repository layout
 
 ```
@@ -229,6 +278,17 @@ _bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 ```
 
 ## 📊 Status
+
+✅ **Story 2.3 complete** — uploads now auto-process. The trigger leg
+(`terraform/trigger.tf`): `video.uploaded` rule → `processing-trigger-queue`
+(SQS) → `sfn-trigger-shim` Lambda (event-source mapping) →
+`StartExecution eb-{eventId}`. The shim exists because floci's
+EventBridge cannot target Step Functions directly; dedupe is by
+construction — the deterministic execution name means a republish or
+redelivery hits `ExecutionAlreadyExists`, which the shim acks as
+success. Malformed records are skipped (acked), real errors retry.
+Verified live: gateway upload → record walks to PROCESSED with no manual
+invoke; republish dedupes. 42 new tests (173 total).
 
 ✅ **Story 2.2 complete** — the `processing-state-machine` drives
 UPLOADED → PROCESSING → PROCESSED via direct DynamoDB `updateItem`
@@ -285,8 +345,9 @@ zero resources (substrate only), the provider `endpoints{}` skeleton
 verified, and the README quick-start documented Terraform-only — no
 `aws` CLI anywhere in setup/teardown.
 
-⏭️ **Next:** Story 2.3 — the trigger leg (EventBridge rule →
-processing-trigger queue → shim → StartExecution). See `_bmad-output/`.
+⏭️ **Next:** Epic 3 — the status-history surface (history consumer +
+`status-history` table, then `GET /videos/{videoId}/history` through the
+gateway). See `_bmad-output/`.
 
 ---
 

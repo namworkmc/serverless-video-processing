@@ -57,8 +57,31 @@ python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://l
 ```
 
 Scenarios: `create`, `create-idempotent`, `transition-legal`,
-`transition-illegal`, `reassert`, `envelope`, `all`. The handler deletes its
-fixed test record after every run, so the table stays empty for Story 1.3.
+`transition-illegal`, `reassert`, `envelope`, `transcode`,
+`state-machine`, `trigger-leg`, `all`. The shared-layer scenarios use a
+fixed test record deleted after every run; the runtime scenarios use a
+fresh uuid4 videoId per run and clean up their records/objects.
+ci-local.sh stage 5 invokes `{"scenario":"all"}` and fails on any
+non-pass.
+
+The runtime scenarios backstop the DEPLOYED epic-2 wiring (zip layout,
+handler strings, env vars, IAM, ESM) — the gap unit tests and
+`terraform validate` cannot see:
+
+- `transcode` — seeds a fixture object + UPLOADED record, invokes the
+  deployed `transcode` zip, asserts the payload contract, the processed
+  object's bytes, and that the record stays UPLOADED (pure worker).
+- `state-machine` — seeds, `StartExecution`s the deployed state machine,
+  polls to SUCCEEDED, asserts the record walked to PROCESSED with
+  `processedKey`, the processed object exists, exactly one
+  `video.processed` with the deterministic eventId arrives on the
+  `smoke-capture-queue` (a smoke fixture declared in `terraform/smoke.tf`
+  — the `video.processed` rule targets it), then re-runs and asserts the
+  execution FAILS at the first condition with no regression and no
+  second event.
+- `trigger-leg` — seeds, publishes `video.uploaded` on the bus, and
+  polls the record until the deployed leg (rule → queue → shim →
+  StartExecution → ASL) walks it to PROCESSED.
 
 ## Upload handler (Story 1.3)
 
@@ -151,6 +174,26 @@ are all Terraform-set env vars. The role is least-privilege: logs +
 `events:PutEvents` on `video-bus` only. Invoked only by the state machine
 — no ad-hoc invoke needed (see the root README for `StartExecution`).
 
+## sfn-trigger-shim (Story 2.3)
+
+`sfn_trigger_shim/` (Terraform function name `sfn-trigger-shim`, declared
+in `terraform/trigger.tf`) is the trigger leg's bridge: floci's
+EventBridge cannot target Step Functions, so the `video.uploaded` rule
+targets `processing-trigger-queue` (SQS) and this shim consumes it
+(event-source mapping, batch_size=1), calling `StartExecution` with the
+deterministic name `eb-{eventId}` and exactly the ASL input contract
+`{videoId, status, bucket, key}` (whitespace-stripped). Dedupe:
+`ExecutionAlreadyExists` is treated as success (acked) — the
+deterministic name makes the collision the idempotency. Malformed
+records are logged and acked (skipped); real errors raise so the ESM
+retries. The module builds ONLY a `states` client — no DynamoDB, no S3,
+no EventBridge (enforced by a client-recorder purity test).
+
+Config-not-code: `STATE_MACHINE_ARN`, `AWS_ENDPOINT_URL` are
+Terraform-set env vars. The role is least-privilege: logs +
+`states:StartExecution` on the processing state machine + the standard
+SQS event-source-mapping set on the trigger queue only.
+
 ## Local tests
 
 ```bash
@@ -161,15 +204,17 @@ python -m venv .venv && .venv/Scripts/pip install -r requirements-dev.txt
 .venv/Scripts/python -m pytest lambdas/ -q
 ```
 
-Suites: `lambdas/_shared/tests/` (27 shared-layer tests),
-`lambdas/upload_handler/tests/` (21 upload-handler ATDD tests, activated
+Suites: `lambdas/_shared/tests/` (31 shared-layer tests),
+`lambdas/upload_handler/tests/` (27 upload-handler ATDD tests, activated
 from the red-phase scaffolds — assertions unchanged from the TEA run),
 `lambdas/transcode/tests/` (32 transcode-worker ATDD tests encoding the
-Story 2.1 I/O matrix incl. the AD-4 purity guarantee), and
+Story 2.1 I/O matrix incl. the AD-4 purity guarantee),
 `lambdas/event_publisher/tests/` (45 tests: the Story 2.2 I/O matrix incl.
 the AD-4/AD-6 purity probes, plus `test_asl_definition.py` — the
 ASL↔transition-table mirror backstop that parses
 `terraform/processing.asl.json` and asserts its condition pairs against
-`shared.status.LEGAL_TRANSITIONS`).
+`shared.status.LEGAL_TRANSITIONS`), and
+`lambdas/sfn_trigger_shim/tests/` (43 tests: the Story 2.3 I/O matrix
+incl. the dedupe ack, poison-record skip, and states-only purity probe).
 Each `tests/conftest.py` registers the local `_shared/` directory as the
 `shared` package so imports match the zip layout.

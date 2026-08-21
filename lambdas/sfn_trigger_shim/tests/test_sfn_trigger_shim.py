@@ -192,6 +192,26 @@ class TestHappyTrigger:
             "key": UPLOAD_KEY,
         }
 
+    def test_whitespace_padded_fields_are_stripped_in_asl_input(self, deps):
+        """Retro AI-1: the shim must STRIP values, not just validate them —
+        a padded videoId would otherwise start an execution that fails
+        mid-flight at MarkProcessing's Key match with the record acked."""
+        detail = _detail(
+            videoId=f"  {VIDEO_ID}  ",
+            status="  UPLOADED  ",
+            bucket="  video-uploads  ",
+            key=f"  {UPLOAD_KEY}  ",
+        )
+        handler(_sqs_event(json.dumps(_eb_event(detail=detail))), None)
+
+        sent = json.loads(deps["sfn"].start_calls[0]["input"])
+        assert sent == {
+            "videoId": VIDEO_ID,
+            "status": "UPLOADED",
+            "bucket": "video-uploads",
+            "key": UPLOAD_KEY,
+        }
+
     def test_execution_name_uses_detail_event_id_not_bridge_id(self, deps):
         """AD-5: the name derives from detail.eventId (deterministic
         UUID5), never the EventBridge top-level id (random on real AWS)."""
