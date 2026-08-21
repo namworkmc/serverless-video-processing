@@ -34,7 +34,7 @@ flowchart LR
     UH -->|video.uploaded| EB{{EventBridge<br/>video-bus}}
     EB -->|video.uploaded rule| Q[(SQS<br/>processing-trigger-queue)]
     Q --> SH[⚡ sfn-trigger-shim<br/>Lambda]
-    SH -->|StartExecution<br/>eb-{eventId}| SFN[Step Functions<br/>state machine]
+    SH -->|"StartExecution<br/>eb-{eventId}"| SFN[Step Functions<br/>state machine]
     SFN -->|status walk| DDB
     SFN --> TC[⚡ transcode<br/>Lambda]
     S3U -->|get object| TC
