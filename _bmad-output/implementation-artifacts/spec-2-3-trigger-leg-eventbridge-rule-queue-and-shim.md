@@ -2,7 +2,7 @@
 title: 'Story 2.3: Trigger Leg — EventBridge Rule, Queue, and Shim'
 type: 'feature'
 created: '2026-08-20'
-status: 'in-review'
+status: 'done'
 baseline_commit: '28b57a61c1337c652e281a5b49b562f5d9433b4d'
 review_loop_iteration: 0
 context:
