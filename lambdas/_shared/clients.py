@@ -96,3 +96,7 @@ def s3_client():
 
 def events_client():
     return _client("events")
+
+
+def states_client():
+    return _client("stepfunctions")

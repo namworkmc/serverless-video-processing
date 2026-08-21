@@ -17,3 +17,15 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-2-processing-state-machine-event-publisher.md`
   summary: Reconcile updatedAt timestamp format — the ASL writes $$.State.EnteredTime (ISO-8601 with milliseconds) while the shared layer's _now_iso() writes second-precision Z strings, so updatedAt drifts between the two writers
   evidence: Story 2.2 review (verification-gap + edge-case layers): no consumer or test observes the format today, but a future consumer comparing/sorting updatedAt across writers would see mixed precision; fix is one coordinated change (normalize in the ASL or the shared layer)
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3-trigger-leg-eventbridge-rule-queue-and-shim.md`
+  summary: Update README.md and lambdas/README.md with the trigger-leg documentation — architecture diagram update (rule → queue → shim), upload-now-auto-processes flow, shim dedupe semantics (eb-{eventId}, ExecutionAlreadyExists ack), and Status section refresh
+  evidence: Story 2.3 spec exceeded the 1600-token scope guideline (3,046 tokens); user chose [S] Split at checkpoint 1 — the docs update is an independently shippable deliverable separable from the trigger-leg implementation goal (queue, rule, shim, ESM, tests)
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3-trigger-leg-eventbridge-rule-queue-and-shim.md`
+  summary: Add a smoke scenario covering the trigger leg (publish video.uploaded → queue → shim → StartExecution) so the rule/queue/ESM/zip wiring has a CI regression net
+  evidence: Story 2.3 review (verification-gap layer): smoke scenarios cover the shared layer only; a dropped zip source block or broken ESM surfaces only at runtime — all 5 CI stages stay green; the wiring was verified solely by a manual ad-hoc upload journey
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3-trigger-leg-eventbridge-rule-queue-and-shim.md`
+  summary: Unit-test the shared.clients factory service names (states_client → "stepfunctions"; the sibling factories are equally untested)
+  evidence: Story 2.3 review (verification-gap layer): lambdas/_shared/tests/test_shared.py covers only _endpoint_url/_region; a service-name typo fails first at live invoke
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3-trigger-leg-eventbridge-rule-queue-and-shim.md`
+  summary: Consolidate the ClientError-code duck-typing pattern — shared.errors.is_conditional_check_failed and the shim's _is_execution_already_exists — into one shared helper
+  evidence: Story 2.3 review (blind-hunter layer): duplicated type(exc).__name__ pattern; this story's spec capped the shared-layer change at the single states_client() factory
