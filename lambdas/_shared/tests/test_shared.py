@@ -285,3 +285,75 @@ def test_clients_region_fallback(monkeypatch):
     assert clients._region() == "us-east-1"
     monkeypatch.setenv("AWS_DEFAULT_REGION", "eu-west-1")
     assert clients._region() == "eu-west-1"
+
+
+def test_client_factories_use_correct_service_names(monkeypatch):
+    """A service-name typo fails first at live invoke — pin every factory's
+    boto3 service name (retro action item)."""
+    from shared import clients
+
+    constructed = []
+
+    class FakeBoto3:
+        @staticmethod
+        def client(service, **kwargs):
+            constructed.append(("client", service))
+            return object()
+
+        @staticmethod
+        def resource(service, **kwargs):
+            constructed.append(("resource", service))
+            return object()
+
+    monkeypatch.setattr(clients, "boto3", FakeBoto3)
+    monkeypatch.setattr(clients, "BOTO3_AVAILABLE", True)
+    monkeypatch.setattr(clients, "_client_cache", {})
+    monkeypatch.setattr(clients, "_resource_cache", {})
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "http://localhost:4566")
+
+    clients.s3_client()
+    clients.events_client()
+    clients.states_client()
+    clients.sqs_client()
+    clients.lambda_client()
+    clients.dynamodb_resource()
+
+    assert constructed == [
+        ("client", "s3"),
+        ("client", "events"),
+        ("client", "stepfunctions"),
+        ("client", "sqs"),
+        ("client", "lambda"),
+        ("resource", "dynamodb"),
+    ]
+
+
+# --- require_field (shared payload validation) ---
+
+def test_require_field_returns_stripped_value():
+    from shared.errors import require_field
+    assert require_field({"k": "  padded  "}, "k") == "padded"
+
+
+def test_require_field_rejects_missing_empty_nonstring():
+    from shared.errors import require_field
+    for event in ({}, {"k": ""}, {"k": "   "}, {"k": 42}, {"k": None},
+                  "not-a-dict", None):
+        with pytest.raises(MalformedInputError):
+            require_field(event, "k")
+
+
+# --- ClientError-code duck typing ---
+
+def test_is_client_error_code_matches_class_name():
+    from shared.errors import is_client_error_code
+
+    class ExecutionAlreadyExists(Exception):
+        pass
+
+    assert is_client_error_code(ExecutionAlreadyExists("x"),
+                                "ExecutionAlreadyExists")
+    assert not is_client_error_code(RuntimeError("x"),
+                                    "ExecutionAlreadyExists")
+    assert is_client_error_code(ConditionalCheckFailedException("x"),
+                                "ConditionalCheckFailedException")

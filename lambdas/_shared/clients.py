@@ -100,3 +100,11 @@ def events_client():
 
 def states_client():
     return _client("stepfunctions")
+
+
+def sqs_client():
+    return _client("sqs")
+
+
+def lambda_client():
+    return _client("lambda")
