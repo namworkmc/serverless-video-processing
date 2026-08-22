@@ -84,8 +84,9 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
   Terraform-set env vars, never hardcoded in handlers.
 - Tests live in `lambdas/<function>/tests/`; each `conftest.py` registers the
   local `_shared/` dir as the `shared` package to mirror the zip layout.
-- Chat output during `bmad-*` workflows: caveman mode (compressed, terse
-  replies). Written artifacts/docs stay normal prose.
+- Chat output during `bmad-*` workflows and any long reasoning session:
+  caveman mode (compressed, terse replies) — long reasoning drifts into
+  unnecessary words otherwise. Written artifacts/docs stay normal prose.
 
 ## Pitfalls
 
