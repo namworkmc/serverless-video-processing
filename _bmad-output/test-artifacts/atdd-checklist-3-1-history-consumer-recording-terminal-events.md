@@ -42,47 +42,47 @@ Fakes: `FakeMetadataTable` (get_item, configurable: found / NotFoundError / othe
 
 I/O matrix coverage (one test per row minimum):
 
-- [ ] T1 happy record: flat-detail SQS event, known videoId → put_item called with exactly `{eventId, videoId, status, timestamp}` + condition `attribute_not_exists(eventId)`; summary `recorded=1`; timestamp ISO-8601 UTC
-- [ ] T2 duplicate eventId: history table raises conditional-check-failed → no raise, summary `deduped=1`, table still holds exactly one item
-- [ ] T3 poison (unknown videoId): metadata get_item raises NotFoundError → no put_item call, summary `dropped=1`, no raise
-- [ ] T4 transient metadata error: get_item raises other exception → handler raises (ESM retry), no put_item
-- [ ] T5 transient write error: put_item raises non-conditional error → handler raises
-- [ ] T6 detail as JSON string: stringified detail parsed, identical to T1
-- [ ] T7 malformed records (parametrize): body not JSON / no detail / missing eventId / missing videoId / missing status / empty-string fields → skipped + acked, no raise, no writes, summary `skipped=1`
-- [ ] T8 non-SQS event: not a dict / Records missing / Records not list → raises `MalformedInputError`
-- [ ] T9 multiple records: mixed batch (recorded + deduped + dropped + skipped) → per-record outcomes tallied correctly, processed in order
-- [ ] T10 purity probe: client-recorder — only a `dynamodb` resource is ever constructed; never s3/events/states/sqs (guards zip/env scope creep)
-- [ ] T11 eventId provenance: entry's eventId equals `shared.events.event_id(videoId, status)` — dedupe key is the deterministic UUID5, not the EventBridge top-level id
+- [x] T1 happy record: flat-detail SQS event, known videoId → put_item called with exactly `{eventId, videoId, status, timestamp}` + condition `attribute_not_exists(eventId)`; summary `recorded=1`; timestamp ISO-8601 UTC
+- [x] T2 duplicate eventId: history table raises conditional-check-failed → no raise, summary `deduped=1`, table still holds exactly one item
+- [x] T3 poison (unknown videoId): metadata get_item raises NotFoundError → no put_item call, summary `dropped=1`, no raise
+- [x] T4 transient metadata error: get_item raises other exception → handler raises (ESM retry), no put_item
+- [x] T5 transient write error: put_item raises non-conditional error → handler raises
+- [x] T6 detail as JSON string: stringified detail parsed, identical to T1
+- [x] T7 malformed records (parametrize): body not JSON / no detail / missing eventId / missing videoId / missing status / empty-string fields → skipped + acked, no raise, no writes, summary `skipped=1`
+- [x] T8 non-SQS event: not a dict / Records missing / Records not list → raises `MalformedInputError`
+- [x] T9 multiple records: mixed batch (recorded + deduped + dropped + skipped) → per-record outcomes tallied correctly, processed in order
+- [x] T10 purity probe: client-recorder — only a `dynamodb` resource is ever constructed; never s3/events/states/sqs (guards zip/env scope creep)
+- [x] T11 eventId provenance: entry's eventId equals `shared.events.event_id(videoId, status)` — dedupe key is the deterministic UUID5, not the EventBridge top-level id
 
 Fixture discipline: event fixtures built via `shared.events.build_envelope(EVENT_PROCESSED, processed_detail(...))` + flat promotion `{**envelope, **envelope["detail"]}` — the producer's real wire shape, never a hand-typed dict.
 
 ## Terraform Checklist (`terraform/history.tf`)
 
-- [ ] X1 `status-history` table: PK `eventId` (S), PAY_PER_REQUEST
-- [ ] X2 `history-queue`: `visibility_timeout_seconds = 300`
-- [ ] X3 queue policy: `events.amazonaws.com` `sqs:SendMessage` scoped to the history rule ARN only
-- [ ] X4 NEW rule `video-processed-to-history` on `video-bus`, pattern `detail-type = ["video.processed"]`; target = history queue only
-- [ ] X5 `video.uploaded` rule (trigger.tf) and smoke capture rule (smoke.tf) byte-unchanged
-- [ ] X6 zip: `shared/` (all 5 modules) + `history_consumer/` source blocks — hand-maintained set complete
-- [ ] X7 IAM: logs + `dynamodb:GetItem` on video-metadata only + `dynamodb:PutItem` on status-history only + SQS-ESM trio on history queue only
-- [ ] X8 env: `METADATA_TABLE`, `HISTORY_TABLE`, `AWS_ENDPOINT_URL` — no names in code
-- [ ] X9 ESM `batch_size = 1`; handler string `history_consumer.handler.handler`; outputs (table name, queue name/URL/ARN, function)
-- [ ] X10 `terraform fmt -check` + `terraform validate` green
+- [x] X1 `status-history` table: PK `eventId` (S), PAY_PER_REQUEST
+- [x] X2 `history-queue`: `visibility_timeout_seconds = 300`
+- [x] X3 queue policy: `events.amazonaws.com` `sqs:SendMessage` scoped to the history rule ARN only
+- [x] X4 NEW rule `video-processed-to-history` on `video-bus`, pattern `detail-type = ["video.processed"]`; target = history queue only
+- [x] X5 `video.uploaded` rule (trigger.tf) and smoke capture rule (smoke.tf) byte-unchanged
+- [x] X6 zip: `shared/` (all 5 modules) + `history_consumer/` source blocks — hand-maintained set complete
+- [x] X7 IAM: logs + `dynamodb:GetItem` on video-metadata only + `dynamodb:PutItem` on status-history only + SQS-ESM trio on history queue only
+- [x] X8 env: `METADATA_TABLE`, `HISTORY_TABLE`, `AWS_ENDPOINT_URL` — no names in code
+- [x] X9 ESM `batch_size = 1`; handler string `history_consumer.handler.handler`; outputs (table name, queue name/URL/ARN, function)
+- [x] X10 `terraform fmt -check` + `terraform validate` green
 
 ## Live Verification Checklist (floci)
 
-- [ ] L1 floci healthy (`curl -sf http://localhost:4566/_localstack/health`)
-- [ ] L2 `terraform apply` — only the ~10 new resources created; state list diff confirms no churn on existing resources
-- [ ] L3 upload via gateway → poll `video-metadata` to PROCESSED → `status-history` has exactly one entry `{eventId=UUID5(videoId, PROCESSED), videoId, status, timestamp}`
-- [ ] L4 republish identical `video.processed` (boto3 put_events) → wait → still exactly one entry
-- [ ] L5 publish `video.processed` with unknown videoId + fabricated eventId → wait → no entry for that eventId
-- [ ] L6 consumer Lambda logs show the recorded/deduped/dropped lines (NFR-5 traceability)
+- [x] L1 floci healthy (`curl -sf http://localhost:4566/_localstack/health`)
+- [x] L2 `terraform apply` — only the ~10 new resources created; state list diff confirms no churn on existing resources
+- [x] L3 upload via gateway → poll `video-metadata` to PROCESSED → `status-history` has exactly one entry `{eventId=UUID5(videoId, PROCESSED), videoId, status, timestamp}`
+- [x] L4 republish identical `video.processed` (boto3 put_events) → wait → still exactly one entry
+- [x] L5 publish `video.processed` with unknown videoId + fabricated eventId → wait → no entry for that eventId
+- [x] L6 consumer Lambda logs show the recorded/deduped/dropped lines (NFR-5 traceability)
 
 ## Gate
 
-- [ ] G1 `uv run --with ruff ruff check lambdas/ --select E,F`
-- [ ] G2 `uv run --with 'pytest>=8.0' pytest lambdas/ -q` — all new + all existing pass
-- [ ] G3 `bash scripts/ci-local.sh` — 5 stages green (smoke reuses healthy running floci; worktree compose-name caveat per spec-2-3 design notes)
+- [x] G1 `uv run --with ruff ruff check lambdas/ --select E,F`
+- [x] G2 `uv run --with 'pytest>=8.0' pytest lambdas/ -q` — all new + all existing pass
+- [x] G3 `bash scripts/ci-local.sh` — 5 stages green (smoke reuses healthy running floci; worktree compose-name caveat per spec-2-3 design notes)
 
 ## Red-Green Workflow
 
@@ -114,6 +114,7 @@ Fixture discipline: event fixtures built via `shared.events.build_envelope(EVENT
 - `sprint-status.yaml` last_updated format restored to `MM-DD-YYYY HH:MM` (blind-hunter)
 - `lambdas/README.md` updated: directory tree + history-consumer section + suite list (43 tests) (blind-hunter)
 - Re-verified after patches: ruff green, 221 passed (43 consumer), `terraform apply` (zip rebuilt), fresh live upload → PROCESSED → exactly one history entry
+- Review-findings patches (2026-08-22): status validated against `shared.status.STATUSES` before write (+ test); producer→consumer wire-shape coupling test (real `event_publisher.handler` output fed through the consumer); mid-batch transient-failure redelivery-then-dedupe test; non-dict body / non-dict stringified-detail parametrize cases; non-string-field parametrization extended to `eventId`/`videoId`; `epic-3-context.md` rule wording fixed to as-built AD-1 (separate new rule); test docstring RED→GREEN; checklist boxes checked. Suite now 54 tests, all green
 - Deferred (5 entries in deferred-work.md): _parse_detail consolidation, eventId derivation cross-check, history-leg smoke scenario, smoke residue cleanup, root README refresh
 - Rejected against frozen spec: DLQ/retry machinery (Never), status filtering (Never), consumption-time timestamp (Always), depends_on (apply green twice), messageId logging (batch_size=1, shim parity)
 

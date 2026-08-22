@@ -243,7 +243,7 @@ ASL↔transition-table mirror backstop that parses
 `shared.status.LEGAL_TRANSITIONS`), and
 `lambdas/sfn_trigger_shim/tests/` (43 tests: the Story 2.3 I/O matrix
 incl. the dedupe ack, poison-record skip, and states-only purity probe),
-and `lambdas/history_consumer/tests/` (43 tests: the Story 3.1 I/O matrix
+and `lambdas/history_consumer/tests/` (54 tests: the Story 3.1 I/O matrix
 incl. the conditional-write dedupe, poison drop vs transient retry, and
 the dynamodb-only purity probe).
 Each `tests/conftest.py` registers the local `_shared/` directory as the

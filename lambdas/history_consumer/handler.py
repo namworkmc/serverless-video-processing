@@ -12,7 +12,8 @@ For each SQS record the consumer:
    `{eventId, schemaVersion, videoId, status, bucket, originalKey,
    processedKey, detail}` (AD-6 as-built wire shape).
 2. Validates the record: `eventId`, `videoId`, and `status` must be
-   present non-empty strings. Anything less is a malformed record:
+   present non-empty strings, and `status` must be a legal status
+   (`shared.status.STATUSES`). Anything less is a malformed record:
    logged and acked (skipped) — never raised, never retried (no DLQ in
    v1; a deterministic poison message would retry forever).
 3. Validates the videoId against `video-metadata` via the shared layer
@@ -122,6 +123,15 @@ def _process_record(record):
     event_id = fields["eventId"]
     video_id = fields["videoId"]
     record_status = fields["status"]
+
+    # Status validation: only legal statuses enter the audit trail. A
+    # fabricated event with a known videoId but an arbitrary status string
+    # is malformed — skipped, not persisted (tightens the malformed-record
+    # row of the I/O matrix).
+    if record_status not in status.STATUSES:
+        logger.warning(
+            "skipping malformed record: unknown status %r", record_status)
+        return "skipped"
 
     # Poison detection (FR-15): NotFoundError is a successful negative
     # lookup — drop the event, ack it, never retry. Any other error is

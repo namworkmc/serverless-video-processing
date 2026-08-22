@@ -92,6 +92,20 @@ history-consumer handler (input = SQS event from the event-source mapping):
 - Given an event whose videoId is unknown to `video-metadata` (published via local boto3 with a fabricated eventId), when the consumer validates it, then the event is dropped — no table entry, message acked, never retried (FR-15)
 - Given the test suite, when pytest runs, then all new tests pass (consumer I/O matrix, purity probe) and all existing tests still pass; `bash scripts/ci-local.sh` is green end-to-end
 
+### Review Findings
+
+- [x] [Review][Patch] Validate incoming `status` against `shared.status.STATUSES` before writing — today only presence/non-empty is checked, so an arbitrary status string from a fabricated event with a KNOWN videoId is persisted into the audit trail. Add `if record_status not in status.STATUSES: return "skipped"` + test. User decision 2026-08-22: patch now (overrides frozen-matrix hesitation; tightens malformed-record row). [lambdas/history_consumer/handler.py:113-124]
+- [x] [Review][Patch] Couple the consumer's wire-shape fixture to the producer's actual output — `_flat_detail()` rebuilds the promotion recipe `{**envelope, **envelope["detail"]}` inline, so a producer-side field rename/nesting silently empties the audit trail while both suites stay green. Add one test: invoke `event_publisher.handler` with a fake events client, feed the emitted `Detail` through the consumer's `_eb_event`/`_sqs_event` shape, assert `recorded == 1`. [lambdas/history_consumer/tests/test_history_consumer.py:137-146]
+- [x] [Review][Patch] Test gap: transient failure mid-batch after a successful write (`[good, raises]` → redelivery → first record dedupes) — the redelivery-then-dedupe interaction for a partially processed batch is unverified [lambdas/history_consumer/tests/test_history_consumer.py]
+- [x] [Review][Patch] Test gap: body that parses to a non-dict (`"[1,2,3]"`) and a stringified detail that parses to a non-dict — both hit the `isinstance(detail, dict)` guard but are untested [lambdas/history_consumer/tests/test_history_consumer.py]
+- [x] [Review][Patch] Fix `epic-3-context.md` wording: "The `video.processed` rule gains the history queue as an additional target" contradicts the as-built AD-1 implementation (separate new rule `video-processed-to-history`) [_bmad-output/implementation-artifacts/epic-3-context.md:19]
+- [x] [Review][Patch] Test file docstring still says `TDD Phase: RED` — suite is green [lambdas/history_consumer/tests/test_history_consumer.py:22]
+- [x] [Review][Patch] Non-string-field parametrization only applied to `status` — non-string `eventId`/`videoId` untested [lambdas/history_consumer/tests/test_history_consumer.py:358-360]
+- [x] [Review][Patch] ATDD checklist: all T1–T11, X1–X10, L1–L6, G1–G3 checkboxes unchecked despite Execution Evidence claiming all passed [_bmad-output/test-artifacts/atdd-checklist-3-1-history-consumer-recording-terminal-events.md]
+- [x] [Review][Defer] Cross-check arriving `eventId` against `events.event_id(videoId, status)` and treat mismatch as malformed [lambdas/history_consumer/handler.py:122] — deferred, pre-existing (deferred-work.md entry from the story's own review loop; spec-level decision)
+- [x] [Review][Defer] History-leg smoke scenario — no committed check reads `status-history`; deleting the PutItem IAM statement, a zip source block, or the ESM ships green through all 5 CI stages [terraform/history.tf] — deferred, spec Design Notes explicit deferral + deferred-work.md entry
+- [x] [Review][Defer] Smoke-run residue in `status-history` — smoke scenarios emit `video.processed` events whose entries persist after metadata cleanup [lambdas/smoke/handler.py:415] — deferred, deferred-work.md entry
+
 ## Spec Change Log
 
 ## Design Notes

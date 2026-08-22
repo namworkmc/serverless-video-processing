@@ -16,7 +16,7 @@ Give the pipeline's terminal events a queryable, deduplicated audit trail: a `hi
 - The history consumer records a history entry for every consumed `video.processed` event; a duplicate `eventId` appends nothing — exactly one entry per unique event, redelivery produces no duplicate records and no re-work.
 - Poison handling: an event whose `videoId` the metadata table reports unknown is dropped — not stored, message acked, never retried. A transient metadata-unavailable error fails the message so SQS redelivers and the event is retried, never dropped.
 - The history consumer records every terminal event it consumes (no status filtering — unlike the Epic 4 search consumer, which indexes only `PROCESSED`).
-- The `video.processed` rule gains the history queue as an additional target without altering the `video.uploaded` rule; a new consumer = new queue + new rule target, never a change to an existing consumer.
+- A NEW `video.processed` rule (`video-processed-to-history`) targets the history queue, without altering the `video.uploaded` rule or any existing rule; a new consumer = new queue + new rule, never a change to an existing consumer.
 - The gateway history query returns the video's entries, each carrying status, `eventId`, and timestamp; an unknown `videoId` returns 404 with body `{"error": ...}`. Gateway responses pass through unchanged (status codes and error bodies).
 - The Bruno collection grows a history request with assert blocks and poll-with-timeout (the consumer leg is async — retry until the entry appears or the timeout fails the assertion; no fixed sleeps), passing against the gateway URL only.
 - Consumer idempotency keys on the deterministic `eventId` derived from `(videoId, status)`; timestamps are ISO-8601 UTC strings.

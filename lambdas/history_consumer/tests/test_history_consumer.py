@@ -19,7 +19,7 @@ architect's checklist (T1-T11):
 Plus the purity guarantee: only a `dynamodb` resource is ever
 constructed — never s3/events/states/sqs.
 
-TDD Phase: RED
+TDD Phase: GREEN
 Story: 3-1-history-consumer-recording-terminal-events
 """
 
@@ -334,6 +334,8 @@ class TestMalformedRecords:
         json.dumps({"no-detail": True}),
         json.dumps({"detail": "not-json-either"}),
         json.dumps({"detail": ["not", "a", "dict"]}),
+        "[1, 2, 3]",                          # body parses to a non-dict
+        json.dumps({"detail": "[1, 2, 3]"}),  # stringified detail -> non-dict
     ])
     def test_unparseable_body_skipped(self, deps, body):
         summary = handler(_sqs_event(body), None)
@@ -355,9 +357,18 @@ class TestMalformedRecords:
         assert summary["skipped"] == 1
         assert deps[HISTORY_TABLE].put_calls == []
 
+    @pytest.mark.parametrize("field", ["eventId", "videoId", "status"])
     @pytest.mark.parametrize("bad_value", [123, {"nested": True}, ["x"]])
-    def test_non_string_required_field_skipped(self, deps, bad_value):
-        detail = _flat_detail(status=bad_value)
+    def test_non_string_required_field_skipped(self, deps, field, bad_value):
+        detail = _flat_detail(**{field: bad_value})
+        summary = handler(_sqs_event(json.dumps(_eb_event(detail))), None)
+        assert summary["skipped"] == 1
+        assert deps[HISTORY_TABLE].put_calls == []
+
+    def test_unknown_status_skipped(self, deps):
+        """A fabricated event with a KNOWN videoId but a status outside
+        shared.status.STATUSES must not enter the audit trail."""
+        detail = _flat_detail(status="NOT_A_STATUS")
         summary = handler(_sqs_event(json.dumps(_eb_event(detail))), None)
         assert summary["skipped"] == 1
         assert deps[HISTORY_TABLE].put_calls == []
@@ -423,6 +434,38 @@ class TestMultipleRecords:
                            "dropped": 0, "skipped": 0}
         assert list(deps[HISTORY_TABLE].items) == [EVENT_ID]
 
+    def test_transient_failure_mid_batch_redelivery_dedupes(self, deps):
+        """[good, raises] batch: the first record writes, the second
+        raises transiently; SQS redelivers the whole batch — the first
+        record dedupes, the second records. Still exactly one entry per
+        eventId."""
+        history = deps[HISTORY_TABLE]
+        deps[METADATA_TABLE].known.add("other-video")
+        good = json.dumps(_eb_event())
+        other_id = events.event_id("other-video", "PROCESSED")
+        other = json.dumps(_eb_event(_flat_detail(
+            videoId="other-video", eventId=other_id)))
+
+        real_put = history.put_item
+        calls = {"n": 0}
+
+        def fail_second(**kwargs):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise TransientDynamoError("network")
+            return real_put(**kwargs)
+
+        history.put_item = fail_second
+        with pytest.raises(TransientDynamoError):
+            handler(_sqs_event(good, other), None)
+        assert list(history.items) == [EVENT_ID]
+
+        history.put_item = real_put
+        summary = handler(_sqs_event(good, other), None)
+        assert summary == {"processed": 2, "recorded": 1, "deduped": 1,
+                           "dropped": 0, "skipped": 0}
+        assert set(history.items) == {EVENT_ID, other_id}
+
 
 # ---------------------------------------------------------------------------
 # T10 — Purity probe: only a dynamodb resource is ever constructed
@@ -468,6 +511,43 @@ class TestEventIdProvenance:
         item = deps[HISTORY_TABLE].put_calls[0]["Item"]
         assert item["eventId"] == EVENT_ID
         assert "bridge-id-must-not-appear-anywhere" not in json.dumps(item)
+
+
+# ---------------------------------------------------------------------------
+# Wire-shape coupling: the producer's ACTUAL output must be consumable.
+# _flat_detail() rebuilds the promotion recipe inline, so a producer-side
+# field rename/nesting would silently empty the audit trail while both
+# suites stay green — this test fails instead.
+# ---------------------------------------------------------------------------
+
+class TestProducerWireShapeCoupling:
+    def test_publisher_output_is_consumed_as_recorded(self, deps,
+                                                      monkeypatch):
+        import event_publisher.handler as pub
+
+        captured = {}
+
+        class FakeEventsClient:
+            def put_events(self, Entries):
+                captured["entries"] = Entries
+                return {"FailedEntryCount": 0}
+
+        monkeypatch.setenv("PROCESSED_BUCKET", "processed-bucket")
+        monkeypatch.setenv("EVENT_BUS_NAME", "video-bus")
+        monkeypatch.setattr(
+            pub, "_events_client", lambda: FakeEventsClient())
+
+        pub.handler({
+            "videoId": VIDEO_ID,
+            "originalKey": ORIGINAL_KEY,
+            "processedKey": PROCESSED_KEY,
+        }, None)
+
+        wire_detail = json.loads(captured["entries"][0]["Detail"])
+        summary = handler(
+            _sqs_event(json.dumps(_eb_event(wire_detail))), None)
+        assert summary["recorded"] == 1
+        assert deps[HISTORY_TABLE].items[EVENT_ID]["videoId"] == VIDEO_ID
 
 
 # ---------------------------------------------------------------------------
