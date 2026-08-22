@@ -2,7 +2,7 @@
 title: 'Integration test suite — Step 1: swap the CI smoke gate'
 type: 'feature'
 created: '2026-08-22'
-status: 'in-progress' # draft | ready-for-dev | in-progress | in-review | done
+status: 'in-review' # draft | ready-for-dev | in-progress | in-review | done
 review_loop_iteration: 0
 baseline_commit: 'b96a2a8a8ab3c551c01afbcfb7e0844c83f571e1'
 context:

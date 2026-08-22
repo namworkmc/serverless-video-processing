@@ -35,6 +35,8 @@ UPLOADS_BUCKET = "video-uploads"
 PROCESSED_BUCKET = "video-processed"
 EVENT_BUS = "video-bus"
 HISTORY_TABLE = "status-history"
+HISTORY_QUEUE = "history-queue"
+TRIGGER_QUEUE = "processing-trigger-queue"
 CAPTURE_QUEUE = "smoke-capture-queue"
 STATE_MACHINE_NAME = "processing-state-machine"
 TRANSCODE_FUNCTION = "transcode"
@@ -138,6 +140,44 @@ class Stack:
             lambda: (lambda r: r if r and r.get("status") == status else None)(
                 self.get_record(video_id)),
             timeout=timeout)
+
+    # --- SQS queue observation ----------------------------------------------
+
+    def _queue_url(self, name):
+        return self.sqs.get_queue_url(QueueName=name)["QueueUrl"]
+
+    def wait_queue_drained(self, name, arrive_timeout=30, drain_timeout=60):
+        """Wait until a message arrives on the queue, then until the queue is
+        fully empty (visible + in-flight == 0, i.e. consumed and deleted).
+        Makes negative assertions condition-based instead of fixed sleeps."""
+        url = self._queue_url(name)
+
+        def attrs():
+            a = self.sqs.get_queue_attributes(
+                QueueUrl=url,
+                AttributeNames=["ApproximateNumberOfMessages",
+                                "ApproximateNumberOfMessagesNotVisible"])
+            return (int(a["Attributes"]["ApproximateNumberOfMessages"]),
+                    int(a["Attributes"][
+                        "ApproximateNumberOfMessagesNotVisible"]))
+
+        deadline = time.time() + arrive_timeout
+        while time.time() < deadline:
+            visible, inflight = attrs()
+            if visible + inflight > 0:
+                break
+            time.sleep(1)
+        else:
+            raise TimeoutError(
+                f"no message arrived on {name} within {arrive_timeout}s")
+        deadline = time.time() + drain_timeout
+        while time.time() < deadline:
+            visible, inflight = attrs()
+            if visible + inflight == 0:
+                return
+            time.sleep(1)
+        raise TimeoutError(
+            f"queue {name} not drained within {drain_timeout}s")
 
     # --- Capture queue (video.processed observation point) ------------------
 
@@ -278,12 +318,16 @@ class Stack:
             f"{ENDPOINT_URL}/2015-03-31/functions/{TRANSCODE_FUNCTION}"
             "/invocations",
             json=payload, timeout=60)
+        assert resp.status_code == 200, (
+            f"transcode invoke HTTP {resp.status_code}: {resp.text}")
         body = resp.json()
         # floci may wrap the result as {Payload, StatusCode}; unwrap if so.
         if isinstance(body, dict) and "Payload" in body:
             body = body["Payload"]
             if isinstance(body, str):
                 body = json.loads(body)
+        if isinstance(body, dict) and body.get("errorType"):
+            raise RuntimeError(f"transcode invocation failed: {body}")
         return body
 
     # --- status-history -----------------------------------------------------
@@ -331,7 +375,11 @@ def gateway_base_url():
     out = subprocess.run(
         ["terraform", "output", "-raw", "gateway_base_url"],
         cwd=REPO_ROOT / "terraform",
-        capture_output=True, text=True, check=True)
+        capture_output=True, text=True)
+    if out.returncode != 0:
+        raise RuntimeError(
+            "terraform output gateway_base_url failed (is the stack "
+            f"applied?): {out.stderr.strip()}")
     return out.stdout.strip().rstrip("/")
 
 

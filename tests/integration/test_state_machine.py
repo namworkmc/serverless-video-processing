@@ -53,6 +53,10 @@ def test_t6_rerun_fails_without_regression(stack, binary_payload, video_id):
         "bucket": UPLOADS_BUCKET, "key": key})
     rerun_desc = stack.wait_execution(rerun["executionArn"])
     assert rerun_desc["status"] == "FAILED", rerun_desc
+    # Failed at MarkProcessing's condition (record already PROCESSED), not
+    # anywhere else — floci surfaces the DynamoDB error on the execution.
+    assert "ConditionalCheckFailed" in rerun_desc.get("error", ""), (
+        f"rerun failed for an unexpected reason: {rerun_desc}")
 
     assert stack.get_record(video_id)["status"] == "PROCESSED"
     assert stack.collect_processed_events(video_id, timeout=10) == [], (

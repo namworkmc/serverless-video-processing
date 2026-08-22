@@ -3,8 +3,8 @@
 import time
 import uuid
 
-from conftest import (EVENT_PROCESSED, PROCESSED_BUCKET, event_id,
-                      poll_until)
+from conftest import (EVENT_PROCESSED, HISTORY_QUEUE, PROCESSED_BUCKET,
+                      event_id, poll_until)
 
 
 def test_t8_history_entry_written(stack, gateway_base_url, binary_payload):
@@ -47,7 +47,8 @@ def test_t9_duplicate_processed_event_deduped(
             vid, PROCESSED_BUCKET, record["originalKey"],
             record.get("processedKey", f"processed/{vid}/fixture.bin")))
 
-        time.sleep(15)
+        # Wait for the duplicate to be consumed (deduped), then assert.
+        stack.wait_queue_drained(HISTORY_QUEUE)
         entries = stack.history_entries(vid)
         assert len(entries) == 1, (
             f"duplicate processed event created a second entry: {entries}")
@@ -64,6 +65,7 @@ def test_t10_unknown_video_id_dropped(stack):
         f"processed/{unknown_vid}/fixture.mp4",
         eid=f"it-fabricated-{uuid.uuid4()}"))
 
-    time.sleep(15)
+    # Wait for the poison message to be consumed (dropped), then assert.
+    stack.wait_queue_drained(HISTORY_QUEUE)
     assert stack.history_entries(unknown_vid) == [], (
         "poison event produced a history entry")

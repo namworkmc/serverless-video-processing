@@ -1,9 +1,7 @@
 """T3–T4 — end-to-end auto-processing and redelivery no-op (Stories 2.2, 2.3)."""
 
-import time
-
-from conftest import (EVENT_UPLOADED, PROCESSED_BUCKET, UPLOADS_BUCKET,
-                      event_id)
+from conftest import (EVENT_UPLOADED, PROCESSED_BUCKET, TRIGGER_QUEUE,
+                      UPLOADS_BUCKET, event_id)
 
 
 def test_t3_end_to_end_auto_processing(
@@ -60,8 +58,9 @@ def test_t4_redelivered_uploaded_event_is_no_op(
             stack.uploaded_payload(vid, UPLOADS_BUCKET, key))
 
         # The shim acks ExecutionAlreadyExists; nothing new may happen.
-        # Wait out the async leg, then assert the steady state.
-        time.sleep(15)
+        # Wait for the redelivered message to be consumed, then assert the
+        # steady state.
+        stack.wait_queue_drained(TRIGGER_QUEUE)
         assert stack.get_record(vid)["status"] == "PROCESSED"
         assert stack.collect_processed_events(vid, timeout=10) == [], (
             "republish produced a second processed event")
