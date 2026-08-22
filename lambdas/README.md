@@ -93,8 +93,10 @@ handler strings, env vars, IAM, ESM) — the gap unit tests and
 `terraform/upload.tf`) is the ingest leg behind the gateway route
 `POST /videos/upload`:
 
-1. Parses the multipart body RAW (floci's gateway delivers
-   `isBase64Encoded: false` — never base64) with stdlib `email.parser`.
+1. Parses the multipart body with stdlib `email.parser`. The gateway
+   delivers non-text bodies base64 with `isBase64Encoded: true` (matches
+   real AWS); the handler decodes first, then parses raw bytes.
+   Plain-text bodies are parsed as-is.
 2. Mints `videoId` (UUID4) exactly once; the same id appears in the
    response, the S3 key (`{videoId}/{filename}`), the record, and the event.
 3. Side effects in order: S3 `put_object` → `shared.status.create_record`

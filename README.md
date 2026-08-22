@@ -136,14 +136,10 @@ unparseable body, empty file, invalid filename) return `400 {"error": ...}`.
 >   is canonical for consumers; the nested `detail` object stays intact for
 >   envelope-shaped readers. Detail keys must never collide with envelope
 >   keys (`eventId`, `schemaVersion`).
-> - **Text-safe payloads only (floci 1.6.0).** The floci 1.6.0 gateway
->   corrupts binary multipart bodies (it decodes the body as a UTF-8
->   string — high-byte payloads are rejected, valid-UTF-8 byte sequences
->   silently shrink). Uploads through the gateway must be text-safe;
->   real binary video bytes are unverified end-to-end through the
->   gateway. floci 1.7.0 fixes this (base64-encodes non-text bodies,
->   `isBase64Encoded: true` — real-AWS behavior); the bump is tracked
->   before Epic 4's end-to-end verification.
+> - **Binary uploads.** The gateway delivers non-text bodies (incl.
+>   multipart) base64 with `isBase64Encoded: true` — real-AWS behavior;
+>   the upload handler decodes before parsing. Verified end-to-end with a
+>   16 KB all-byte-values payload (sha256 match in S3).
 
 ### 📮 Bruno collection
 
@@ -224,12 +220,12 @@ python -c "import boto3, json; c = boto3.client('stepfunctions', endpoint_url='h
 
 **floci platform facts (binding):**
 
-- floci has **no `UpdateStateMachine`** — any ASL change requires
-  `terraform apply -replace=aws_sfn_state_machine.processing`.
-- floci's `lambda:invoke` returns the Lambda result **directly** as the
-  task result — no `{Payload: ...}` wrapper like real AWS (probe-verified
-  2026-08-20). The Transcode task therefore uses `ResultPath` only; on
-  real AWS a `ResultSelector` unwrapping `$.Payload.*` would be required.
+- floci supports `UpdateStateMachine` — ASL changes apply in place via
+  `terraform apply`.
+- floci's `lambda:invoke` wraps the Lambda result as
+  `{Payload: ..., StatusCode: ...}` like real AWS. The Transcode task
+  unwraps `$.Payload` via `ResultSelector`, so the ASL is identical on
+  floci and real AWS.
 
 > [!WARNING]
 > **Retry/FAILED-path stance (accepted lab limitation).** The ASL has no

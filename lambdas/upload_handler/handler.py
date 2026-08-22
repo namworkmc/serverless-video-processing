@@ -2,8 +2,10 @@
 
 POST /videos/upload (API Gateway v2, AWS_PROXY) -> this handler:
 
-1. Parse the multipart body RAW (floci's gateway delivers
-   `isBase64Encoded: false` — never assume base64).
+1. Parse the multipart body. The gateway delivers non-text bodies
+   base64-encoded with `isBase64Encoded: true` (matches real AWS) —
+   decode first, then parse raw bytes. Plain-text bodies
+   (`isBase64Encoded: false`) are parsed as-is.
 2. Mint `videoId` (UUID4) exactly once; the same id appears in the
    response, the S3 key, the metadata record, and the event (FR-2).
 3. Side effects, strictly in order:
@@ -19,6 +21,7 @@ Terraform-set env vars UPLOADS_BUCKET / METADATA_TABLE / EVENT_BUS_NAME;
 the endpoint from AWS_ENDPOINT_URL (via shared.clients).
 """
 
+import base64
 import json
 import logging
 import os
@@ -101,18 +104,21 @@ def _parse_multipart(event):
     if not body:
         raise MalformedInputError("empty request body")
     if event.get("isBase64Encoded"):
-        # The floci gateway delivers multipart bodies RAW; a base64 body
-        # here is outside the contract this handler was built for.
-        raise MalformedInputError(
-            "unexpected base64-encoded body; raw multipart expected")
-
-    # latin-1 round-trips every byte value 1:1 — binary-safe for the
-    # string body the gateway delivers. Code points above U+00FF cannot
-    # be a raw byte stream — reject as malformed (400, not 500).
-    try:
-        raw = body.encode("latin-1") if isinstance(body, str) else bytes(body)
-    except UnicodeEncodeError:
-        raise MalformedInputError("request body contains undecodable characters")
+        # The gateway delivers non-text bodies (incl. multipart) base64
+        # with isBase64Encoded: true (matches real AWS). Decode to raw
+        # bytes before parsing.
+        try:
+            raw = base64.b64decode(body, validate=True)
+        except ValueError:
+            raise MalformedInputError("body is not valid base64")
+    else:
+        # Plain-text delivery: latin-1 round-trips every byte value 1:1 —
+        # binary-safe for the string body. Code points above U+00FF cannot
+        # be a raw byte stream — reject as malformed (400, not 500).
+        try:
+            raw = body.encode("latin-1") if isinstance(body, str) else bytes(body)
+        except UnicodeEncodeError:
+            raise MalformedInputError("request body contains undecodable characters")
     try:
         ct_bytes = content_type.encode("latin-1")
     except UnicodeEncodeError:

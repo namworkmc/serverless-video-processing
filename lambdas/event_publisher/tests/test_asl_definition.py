@@ -152,13 +152,15 @@ class TestLambdaTaskWiring:
             "videoId.$": "$.videoId",
             "originalKey.$": "$.key",
         }
-        # FLOCI SHAPE GAP (probe-verified 2026-08-20): floci's
-        # lambda:invoke returns the Lambda result DIRECTLY as the task
-        # result — no {Payload: ...} wrapper like real AWS. So the
-        # transcode result becomes the state payload via ResultPath
-        # alone; a ResultSelector unwrapping $.Payload.* would resolve
-        # to nulls on floci (real AWS would need it).
-        assert "ResultSelector" not in task
+        # The gateway wraps the Lambda result as {Payload: ...,
+        # StatusCode: ...} (real-AWS shape). The ResultSelector unwraps
+        # $.Payload so the ASL is identical on floci and real AWS.
+        assert task["ResultSelector"] == {
+            "videoId.$": "$.Payload.videoId",
+            "originalKey.$": "$.Payload.originalKey",
+            "processedKey.$": "$.Payload.processedKey",
+            "sizeBytes.$": "$.Payload.sizeBytes",
+        }
         assert task["ResultPath"] == "$"
 
     def test_publisher_task_targets_publisher_with_domain_payload(self,

@@ -101,7 +101,7 @@ NFR-8: Terraform-only setup/teardown — all resource creation is attributable t
 - Identity & events: videoId = UUID minted once at ingress; eventId = deterministic name-based UUID (UUID5) from `(videoId, status)`; every event carries eventId + schemaVersion; event names verb-in-past; publisher allow-list — only upload-handler publishes `video.uploaded`, only event-publisher publishes `video.processed`; consumers unwrap SQS `Records[].body` = JSON-stringified EventBridge envelope (`body → detail`).
 - Status-filtered consumption: search consumer indexes only status = PROCESSED events; history consumer records every terminal event; poison handling — unknown videoId dropped (successful negative lookup), transient errors retried.
 - Error mapping in shared layer: ConditionalCheckFailedException on transition → 409; unknown videoId → 404; malformed input → 400; else 500; gateway passes responses through unchanged (no remapping at the edge); no auth anywhere.
-- Gateway route table (declared in Terraform): `POST /videos/upload` (multipart/form-data) → upload-handler; `GET /videos/{videoId}/history` → history-query; `GET /videos/search?title=` → search-query. The gateway delivers multipart bodies RAW (isBase64Encoded: false) — the upload handler parses multipart itself, never assumes base64.
+- Gateway route table (declared in Terraform): `POST /videos/upload` (multipart/form-data) → upload-handler; `GET /videos/{videoId}/history` → history-query; `GET /videos/search?title=` → search-query. The gateway delivers non-text bodies (incl. multipart) base64 with `isBase64Encoded: true` (floci >= 1.7.0, PR #2203; matches real AWS) — the upload handler decodes, then parses multipart itself.
 - Naming conventions: buckets `video-uploads` / `video-processed`; tables `video-metadata` / `status-history` / `search-index`; queues `processing-trigger-queue` / `history-queue` / `search-queue`; one dir per function under `lambdas/`; all names declared in Terraform and consumed via env vars, never string-typed in code.
 - Dependency direction: no function touches a store it does not own; the state machine is the only mutator of video-metadata status after ingress; derived tables have exactly one writer each (history-consumer, search-consumer, search-rebuild); search-rebuild is admin-only direct invoke with no gateway route.
 - Observability: print/structlog to CloudWatch Logs via floci; Step Functions execution history inspectable.
@@ -241,7 +241,7 @@ So that the object lands in S3, an UPLOADED record exists in DynamoDB, and video
 
 **Given** the gateway running
 **When** I POST a multipart/form-data video to `/videos/upload` (via the `_aws/execute-api` URL)
-**Then** the handler parses the raw multipart body itself (`isBase64Encoded: false` — never assumes base64)
+**Then** the handler parses the multipart body itself (base64-decoded when `isBase64Encoded: true` — floci >= 1.7.0 / real AWS deliver non-text bodies base64)
 **And** the handler reads an optional `title` multipart form field, falling back to the uploaded filename when absent, and stores it in the record (FR-10 — this is the field Story 4.2's title search matches on)
 **And** the response is HTTP 2xx returning the minted `videoId` (UUID)
 **And** the object exists in `video-uploads` under a key containing that same `videoId` (FR-1, FR-2)
