@@ -3,7 +3,7 @@
 # Docs: https://floci.io/floci/
 services:
   floci:
-    image: floci/floci:1.6.0
+    image: floci/floci:1.7.0
     ports:
       - "4566:4566"
     volumes:

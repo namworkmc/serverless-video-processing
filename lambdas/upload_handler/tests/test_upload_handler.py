@@ -9,6 +9,7 @@ TDD Phase: GREEN
 Story: 1.3-upload-journey-through-the-gateway
 """
 
+import base64
 import json
 import uuid
 
@@ -121,8 +122,13 @@ def _multipart_body(fields: dict[str, str], file_field: str,
     return body_str
 
 
-def _make_event(body: str, content_type: str | None = None) -> dict:
-    """Build a minimal API Gateway v2 event as floci delivers it."""
+def _make_event(body: str, content_type: str | None = None,
+                base64_encoded: bool = False) -> dict:
+    """Build a minimal API Gateway v2 event as floci delivers it.
+
+    floci >= 1.7.0 (PR #2203, matches real AWS) delivers non-text bodies
+    base64 with isBase64Encoded: true; text bodies stay plain.
+    """
     ct = content_type or f"multipart/form-data; boundary={BOUNDARY}"
     return {
         "version": "2.0",
@@ -130,7 +136,7 @@ def _make_event(body: str, content_type: str | None = None) -> dict:
         "rawPath": "/videos/upload",
         "headers": {"content-type": ct},
         "body": body,
-        "isBase64Encoded": False,
+        "isBase64Encoded": base64_encoded,
     }
 
 
@@ -196,6 +202,32 @@ class TestMultipartParsing:
         # The S3 key should contain the original filename
         s3 = deps["s3"]
         assert "my-video.mp4" in s3.put_calls[0]["Key"]
+
+    def test_parses_base64_multipart_high_byte_binary_intact(self, deps):
+        """floci >= 1.7.0 / real AWS: multipart arrives base64 with
+        isBase64Encoded: true. High-byte payloads must round-trip exactly
+        (the 1.6.0 corruption gap — epic-1 retro AI-1)."""
+        file_bytes = bytes(range(256)) * 4  # every byte value incl. >0x7F
+        body = _multipart_body({}, "file", "demo.mp4", file_bytes)
+        event = _make_event(
+            base64.b64encode(body.encode("latin-1")).decode("ascii"),
+            base64_encoded=True)
+
+        response = handler(event, None)
+
+        assert response["statusCode"] == 200
+        s3 = deps["s3"]
+        assert len(s3.put_calls) == 1
+        assert s3.put_calls[0]["Body"] == file_bytes
+
+    def test_invalid_base64_body_rejected_400(self, deps):
+        """isBase64Encoded: true with non-base64 body -> 400, not 500."""
+        event = _make_event("!!!not-base64!!!", base64_encoded=True)
+
+        response = handler(event, None)
+
+        assert response["statusCode"] == 400
+        assert "error" in json.loads(response["body"])
 
 
 # ---------------------------------------------------------------------------

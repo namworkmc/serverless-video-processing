@@ -92,7 +92,8 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
 
 - `terraform/*.zip` and `*.tfstate*` are generated — never hand-edit
   (gitignored; zips rebuild via `archive_file` on apply).
-- floci has **no `UpdateStateMachine`**: ASL changes need
+- floci 1.7.0 supports `UpdateStateMachine` (#1867) — ASL changes apply in
+  place. On older floci images they need
   `terraform apply -replace=aws_sfn_state_machine.<name>`.
 - Every AWS service used must be listed in the provider `endpoints{}` block in
   `terraform/providers.tf`, or applies fail with `InvalidClientTokenId` 403.
