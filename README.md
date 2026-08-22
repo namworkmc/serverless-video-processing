@@ -136,13 +136,10 @@ unparseable body, empty file, invalid filename) return `400 {"error": ...}`.
 >   is canonical for consumers; the nested `detail` object stays intact for
 >   envelope-shaped readers. Detail keys must never collide with envelope
 >   keys (`eventId`, `schemaVersion`).
-> - **Binary uploads verified (floci >= 1.7.0).** The floci 1.6.0 gateway
->   corrupted binary multipart bodies (UTF-8 string decode — high-byte
->   payloads rejected, valid-UTF-8 byte sequences silently shrunk). Fixed
->   by bumping to floci 1.7.0 (PR #2203: non-text bodies delivered base64,
->   `isBase64Encoded: true` — real-AWS behavior); the upload handler
->   base64-decodes before parsing. A 16 KB all-byte-values payload has been
->   verified end-to-end through the gateway (sha256 match in S3).
+> - **Binary uploads.** The gateway delivers non-text bodies (incl.
+>   multipart) base64 with `isBase64Encoded: true` — real-AWS behavior;
+>   the upload handler decodes before parsing. Verified end-to-end with a
+>   16 KB all-byte-values payload (sha256 match in S3).
 
 ### 📮 Bruno collection
 
@@ -223,13 +220,12 @@ python -c "import boto3, json; c = boto3.client('stepfunctions', endpoint_url='h
 
 **floci platform facts (binding):**
 
-- floci 1.7.0 supports `UpdateStateMachine` (#1867) — ASL changes apply in
-  place. On older floci images they require
-  `terraform apply -replace=aws_sfn_state_machine.processing`.
+- floci supports `UpdateStateMachine` — ASL changes apply in place via
+  `terraform apply`.
 - floci's `lambda:invoke` wraps the Lambda result as
-  `{Payload: ..., StatusCode: ...}` like real AWS (floci >= 1.7.0; 1.6.0
-  returned it directly). The Transcode task unwraps `$.Payload` via
-  `ResultSelector`, so the ASL is identical on floci and real AWS.
+  `{Payload: ..., StatusCode: ...}` like real AWS. The Transcode task
+  unwraps `$.Payload` via `ResultSelector`, so the ASL is identical on
+  floci and real AWS.
 
 > [!WARNING]
 > **Retry/FAILED-path stance (accepted lab limitation).** The ASL has no

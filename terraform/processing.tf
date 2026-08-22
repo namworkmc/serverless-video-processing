@@ -18,10 +18,8 @@
 # exactly — a transition-table change is one coordinated ASL +
 # shared-layer change.
 #
-# FLOCI PLATFORM FACT: floci 1.7.0 supports UpdateStateMachine (#1867) —
-# ASL changes apply in place. On older floci images they require
-# `terraform apply -replace=aws_sfn_state_machine.processing`.
-# Documented in README.md.
+# FLOCI PLATFORM FACT: floci supports UpdateStateMachine — ASL changes
+# apply in place via `terraform apply`. Documented in README.md.
 #
 # REUSES aws_dynamodb_table.video_metadata (smoke.tf),
 # aws_lambda_function.transcode (transcode.tf), and
@@ -177,9 +175,8 @@ resource "aws_sfn_state_machine" "processing" {
   name     = "processing-state-machine"
   role_arn = aws_iam_role.sfn_processing.arn
 
-  # ASL with resource ARNs/names filled by templatefile. floci 1.7.0
-  # supports UpdateStateMachine — ASL changes apply in place (older
-  # images: `terraform apply -replace=aws_sfn_state_machine.processing`).
+  # ASL with resource ARNs/names filled by templatefile. ASL changes
+  # apply in place (floci supports UpdateStateMachine).
   definition = templatefile("${path.module}/processing.asl.json", {
     table_name    = aws_dynamodb_table.video_metadata.name
     transcode_arn = aws_lambda_function.transcode.arn

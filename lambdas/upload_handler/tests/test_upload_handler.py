@@ -126,8 +126,8 @@ def _make_event(body: str, content_type: str | None = None,
                 base64_encoded: bool = False) -> dict:
     """Build a minimal API Gateway v2 event as floci delivers it.
 
-    floci >= 1.7.0 (PR #2203, matches real AWS) delivers non-text bodies
-    base64 with isBase64Encoded: true; text bodies stay plain.
+    Non-text bodies (incl. multipart) arrive base64 with
+    isBase64Encoded: true (real-AWS behavior); text bodies stay plain.
     """
     ct = content_type or f"multipart/form-data; boundary={BOUNDARY}"
     return {
@@ -204,7 +204,7 @@ class TestMultipartParsing:
         assert "my-video.mp4" in s3.put_calls[0]["Key"]
 
     def test_parses_base64_multipart_high_byte_binary_intact(self, deps):
-        """floci >= 1.7.0 / real AWS: multipart arrives base64 with
+        """Real-AWS gateway shape: multipart arrives base64 with
         isBase64Encoded: true. High-byte payloads must round-trip exactly
         (the 1.6.0 corruption gap — epic-1 retro AI-1)."""
         file_bytes = bytes(range(256)) * 4  # every byte value incl. >0x7F

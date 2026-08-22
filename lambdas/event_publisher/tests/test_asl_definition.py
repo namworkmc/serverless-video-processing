@@ -152,10 +152,9 @@ class TestLambdaTaskWiring:
             "videoId.$": "$.videoId",
             "originalKey.$": "$.key",
         }
-        # floci >= 1.7.0 wraps the Lambda result as {Payload: ...,
-        # StatusCode: ...} like real AWS (1.6.0 returned it directly).
-        # The ResultSelector unwraps $.Payload so the ASL is identical
-        # on floci and real AWS.
+        # The gateway wraps the Lambda result as {Payload: ...,
+        # StatusCode: ...} (real-AWS shape). The ResultSelector unwraps
+        # $.Payload so the ASL is identical on floci and real AWS.
         assert task["ResultSelector"] == {
             "videoId.$": "$.Payload.videoId",
             "originalKey.$": "$.Payload.originalKey",

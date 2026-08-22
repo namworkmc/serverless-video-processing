@@ -1,5 +1,5 @@
 {
-  "Comment": "Processing leg (Story 2.2, AD-4): status-first ordering is structural. UPLOADED -> PROCESSING -> PROCESSED via direct DynamoDB integrations, transcode worker in between, terminal video.processed published last. Condition pairs mirror lambdas/_shared/status.py LEGAL_TRANSITIONS exactly. LAMBDA INVOKE SHAPE: floci >= 1.7.0 wraps the Lambda result as {Payload: ..., StatusCode: ...} like real AWS (1.6.0 returned it directly) — the Transcode task unwraps $.Payload via ResultSelector so the ASL is identical on floci and real AWS.",
+  "Comment": "Processing leg (Story 2.2, AD-4): status-first ordering is structural. UPLOADED -> PROCESSING -> PROCESSED via direct DynamoDB integrations, transcode worker in between, terminal video.processed published last. Condition pairs mirror lambdas/_shared/status.py LEGAL_TRANSITIONS exactly. LAMBDA INVOKE SHAPE: the gateway wraps the Lambda result as {Payload: ..., StatusCode: ...} (real-AWS shape) — the Transcode task unwraps $.Payload via ResultSelector so the ASL is identical on floci and real AWS.",
   "StartAt": "MarkProcessing",
   "States": {
     "MarkProcessing": {

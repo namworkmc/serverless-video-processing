@@ -3,9 +3,9 @@
 POST /videos/upload (API Gateway v2, AWS_PROXY) -> this handler:
 
 1. Parse the multipart body. The gateway delivers non-text bodies
-   base64-encoded with `isBase64Encoded: true` (floci >= 1.7.0, PR #2203;
-   matches real AWS) — decode first, then parse raw bytes. Plain-text
-   bodies (`isBase64Encoded: false`) are parsed as-is.
+   base64-encoded with `isBase64Encoded: true` (matches real AWS) —
+   decode first, then parse raw bytes. Plain-text bodies
+   (`isBase64Encoded: false`) are parsed as-is.
 2. Mint `videoId` (UUID4) exactly once; the same id appears in the
    response, the S3 key, the metadata record, and the event (FR-2).
 3. Side effects, strictly in order:
@@ -105,8 +105,8 @@ def _parse_multipart(event):
         raise MalformedInputError("empty request body")
     if event.get("isBase64Encoded"):
         # The gateway delivers non-text bodies (incl. multipart) base64
-        # with isBase64Encoded: true (floci >= 1.7.0, PR #2203; matches
-        # real AWS). Decode to raw bytes before parsing.
+        # with isBase64Encoded: true (matches real AWS). Decode to raw
+        # bytes before parsing.
         try:
             raw = base64.b64decode(body, validate=True)
         except ValueError:

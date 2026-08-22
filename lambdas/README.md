@@ -94,9 +94,9 @@ handler strings, env vars, IAM, ESM) — the gap unit tests and
 `POST /videos/upload`:
 
 1. Parses the multipart body with stdlib `email.parser`. The gateway
-   delivers non-text bodies base64 with `isBase64Encoded: true`
-   (floci >= 1.7.0, PR #2203 — matches real AWS); the handler decodes
-   first, then parses raw bytes. Plain-text bodies are parsed as-is.
+   delivers non-text bodies base64 with `isBase64Encoded: true` (matches
+   real AWS); the handler decodes first, then parses raw bytes.
+   Plain-text bodies are parsed as-is.
 2. Mints `videoId` (UUID4) exactly once; the same id appears in the
    response, the S3 key (`{videoId}/{filename}`), the record, and the event.
 3. Side effects in order: S3 `put_object` → `shared.status.create_record`
