@@ -21,6 +21,10 @@ lambdas/
   event_publisher/    # Story 2.2 event publisher (sole constructor of the
                       # video.processed envelope; dir/package: event_publisher,
                       # Terraform function name: event-publisher)
+  history_consumer/   # Story 3.1 history consumer (video.processed ->
+                      # status-history, dedupe by eventId; dir/package:
+                      # history_consumer, Terraform function name:
+                      # history-consumer)
   ...
 ```
 
@@ -194,6 +198,29 @@ Terraform-set env vars. The role is least-privilege: logs +
 `states:StartExecution` on the processing state machine + the standard
 SQS event-source-mapping set on the trigger queue only.
 
+## history-consumer (Story 3.1)
+
+`history_consumer/` (Terraform function name `history-consumer`, declared
+in `terraform/history.tf`) is the first `video.processed` consumer: the
+`video-processed-to-history` rule targets `history-queue` (SQS) and this
+consumer eats it (event-source mapping, batch_size=1). Per record it
+unwraps `Records[].body` → EventBridge event → flat `detail`, validates
+the `videoId` against `video-metadata` via `shared.status.get_record`,
+and appends `{eventId, videoId, status, timestamp}` to `status-history`
+with `ConditionExpression: attribute_not_exists(eventId)` — the condition
+IS the dedupe (eventId is the deterministic UUID5 of (videoId, status)).
+Poison handling: `NotFoundError` from the metadata lookup drops the event
+(acked, never retried); any other error raises so the ESM retries.
+Malformed records are logged and acked (skipped). The module builds ONLY
+DynamoDB table handles — no S3, no EventBridge, no Step Functions, no SQS
+(enforced by a client-recorder purity test).
+
+Config-not-code: `METADATA_TABLE`, `HISTORY_TABLE`, `AWS_ENDPOINT_URL`
+are Terraform-set env vars. The role is least-privilege: logs +
+`dynamodb:GetItem` on `video-metadata` + `dynamodb:PutItem` on
+`status-history` + the standard SQS event-source-mapping set on the
+history queue only.
+
 ## Local tests
 
 ```bash
@@ -215,6 +242,9 @@ ASL↔transition-table mirror backstop that parses
 `terraform/processing.asl.json` and asserts its condition pairs against
 `shared.status.LEGAL_TRANSITIONS`), and
 `lambdas/sfn_trigger_shim/tests/` (43 tests: the Story 2.3 I/O matrix
-incl. the dedupe ack, poison-record skip, and states-only purity probe).
+incl. the dedupe ack, poison-record skip, and states-only purity probe),
+and `lambdas/history_consumer/tests/` (54 tests: the Story 3.1 I/O matrix
+incl. the conditional-write dedupe, poison drop vs transient retry, and
+the dynamodb-only purity probe).
 Each `tests/conftest.py` registers the local `_shared/` directory as the
 `shared` package so imports match the zip layout.

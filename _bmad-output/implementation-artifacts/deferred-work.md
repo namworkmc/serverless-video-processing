@@ -29,6 +29,21 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-3-trigger-leg-eventbridge-rule-queue-and-shim.md`
   summary: Consolidate the ClientError-code duck-typing pattern — shared.errors.is_conditional_check_failed and the shim's _is_execution_already_exists — into one shared helper
   evidence: Story 2.3 review (blind-hunter layer): duplicated type(exc).__name__ pattern; this story's spec capped the shared-layer change at the single states_client() factory
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
+  summary: Consolidate the duplicated _parse_detail EventBridge-unwrap helper (sfn_trigger_shim/handler.py and history_consumer/handler.py are verbatim copies) into the shared layer
+  evidence: Story 3.1 review (blind-hunter layer): second identical copy now exists; same duplication class epic-2-retro-item-6 resolved for _require_field; the Story 3.1 spec's "no new shared-layer code" boundary blocked consolidation in-story
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
+  summary: Harden the history consumer to cross-check incoming eventId against the deterministic derivation events.event_id(videoId, status) and treat a mismatch as malformed
+  evidence: Story 3.1 review (blind-hunter layer): dedupe rests on eventId being the UUID5 of (videoId, status), but the handler trusts the arriving eventId; a fabricated eventId paired with a KNOWN videoId is written as-is. Mitigated today by AD-6's closed publisher allow-list (only event-publisher constructs video.processed envelopes); adding the check changes frozen I/O-matrix behavior, so it needs a spec-level decision
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
+  summary: Add a history-leg smoke scenario (fresh video → PROCESSED → poll status-history by deterministic eventId → assert exactly one entry → cleanup) with smoke IAM GetItem on status-history, so the deployed consumer wiring is gated by ci-local.sh stage 5
+  evidence: Story 3.1 review (verification-gap layer): no committed check reads status-history — deleting the PutItem IAM statement or a zip source block ships green through all 5 CI stages and fails only at runtime; the live ACs were manual runs. The spec's Design Notes explicitly deferred this ("Epic 3 retro candidate") and smoke.tf is an Ask-First boundary
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
+  summary: Clean up status-history residue from smoke runs — the state-machine and trigger-leg smoke scenarios now emit video.processed events whose history entries persist after their metadata records are deleted
+  evidence: Story 3.1 review (verification-gap layer): every smoke run writes entries for ephemeral smoke-* videoIds that are never observed or cleaned; harmless today (derived, disposable table, AD-3) but a history-leg smoke scenario should own cleanup of its own entries
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
+  summary: Update root README.md for the history leg — mermaid architecture diagram (bus → history-queue → history-consumer → status-history) and Status section refresh ("Next: Epic 3" is stale)
+  evidence: Story 3.1 review (blind-hunter layer): root README still shows only the trigger leg; docs refresh batched with the retro action-item pattern (lambdas/README.md WAS updated in-story per Story 2.3 precedent)
 
 ## Resolved
 
