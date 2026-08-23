@@ -24,6 +24,10 @@ lambdas/
                       # status-history, dedupe by eventId; dir/package:
                       # history_consumer, Terraform function name:
                       # history-consumer)
+  history_query/      # Story 3.2 history query (GET /videos/{videoId}/
+                      # history through the gateway; dir/package:
+                      # history_query, Terraform function name:
+                      # history-query)
   ...
 ```
 
@@ -178,6 +182,31 @@ are Terraform-set env vars. The role is least-privilege: logs +
 `status-history` + the standard SQS event-source-mapping set on the
 history queue only.
 
+## history-query (Story 3.2)
+
+`history_query/` (Terraform function name `history-query`, declared in
+`terraform/history.tf`) is the second client journey: the gateway route
+`GET /videos/{videoId}/history` (integration + route + scoped invoke
+permission on the existing API Gateway v2 from `upload.tf`). Per request
+it extracts `pathParameters.videoId` (missing/empty/non-string → 400 via
+`MalformedInputError`), runs the 404 gate — `shared.status.get_record`
+on `video-metadata`, `NotFoundError` → 404 `{"error": ...}`, no scan —
+then reads `status-history` with a filtered `Scan`
+(`FilterExpression videoId = :vid`; the table's PK is `eventId` only,
+AD-3 binds the key schema, lab scale) and returns
+`200 {"videoId", "entries": [{"status", "eventId", "timestamp"}, ...]}`
+sorted by timestamp ascending. A KNOWN videoId with zero entries is
+200 + empty entries, not 404 — the consumer leg is async, so "no
+entries yet" is not "no video"; the Bruno poll-with-timeout depends on
+exactly that distinction. The module builds ONLY DynamoDB table handles
+— no S3, no EventBridge, no Step Functions, no SQS (enforced by a
+client-recorder purity test).
+
+Config-not-code: `METADATA_TABLE`, `HISTORY_TABLE`, `AWS_ENDPOINT_URL`
+are Terraform-set env vars. The role is least-privilege: logs +
+`dynamodb:GetItem` on `video-metadata` + `dynamodb:Scan` on
+`status-history`.
+
 ## Local tests
 
 ```bash
@@ -202,6 +231,9 @@ ASL↔transition-table mirror backstop that parses
 incl. the dedupe ack, poison-record skip, and states-only purity probe),
 and `lambdas/history_consumer/tests/` (54 tests: the Story 3.1 I/O matrix
 incl. the conditional-write dedupe, poison drop vs transient retry, and
-the dynamodb-only purity probe).
+the dynamodb-only purity probe),
+and `lambdas/history_query/tests/` (25 tests: the Story 3.2 I/O matrix
+incl. the 404-gate-before-scan ordering, filtered-scan binding, timestamp
+sort, entry projection, and the dynamodb-only purity probe).
 Each `tests/conftest.py` registers the local `_shared/` directory as the
 `shared` package so imports match the zip layout.

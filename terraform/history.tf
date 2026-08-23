@@ -209,6 +209,135 @@ resource "aws_lambda_event_source_mapping" "history" {
   batch_size = 1
 }
 
+# --- history-query Lambda (Story 3.2) ----------------------------------------
+
+# GET /videos/{videoId}/history through the EXISTING gateway (upload.tf):
+# 404 gate on video-metadata, then a filtered Scan of status-history.
+data "archive_file" "history_query_zip" {
+  type = "zip"
+  # Same hand-maintained source-block layout as the consumer zip above:
+  # `shared/` at zip root + the history_query package. Adding a module to
+  # lambdas/_shared/ or lambdas/history_query/ REQUIRES a matching source
+  # block here.
+  source {
+    content  = file("${path.module}/../lambdas/_shared/__init__.py")
+    filename = "shared/__init__.py"
+  }
+  source {
+    content  = file("${path.module}/../lambdas/_shared/status.py")
+    filename = "shared/status.py"
+  }
+  source {
+    content  = file("${path.module}/../lambdas/_shared/events.py")
+    filename = "shared/events.py"
+  }
+  source {
+    content  = file("${path.module}/../lambdas/_shared/errors.py")
+    filename = "shared/errors.py"
+  }
+  source {
+    content  = file("${path.module}/../lambdas/_shared/clients.py")
+    filename = "shared/clients.py"
+  }
+  source {
+    content  = file("${path.module}/../lambdas/history_query/__init__.py")
+    filename = "history_query/__init__.py"
+  }
+  source {
+    content  = file("${path.module}/../lambdas/history_query/handler.py")
+    filename = "history_query/handler.py"
+  }
+  output_path = "${path.module}/history_query.zip"
+}
+
+resource "aws_iam_role" "history_query" {
+  name = "history-query-lambda-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "lambda.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "history_query" {
+  name = "history-query-lambda-policy"
+  role = aws_iam_role.history_query.id
+
+  # Least privilege: logs + GetItem on video-metadata (the 404 gate)
+  # + Scan on status-history (the read). No writes, no S3, no queues.
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents",
+        ]
+        Resource = "*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem"]
+        Resource = aws_dynamodb_table.video_metadata.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["dynamodb:Scan"]
+        Resource = aws_dynamodb_table.status_history.arn
+      },
+    ]
+  })
+}
+
+resource "aws_lambda_function" "history_query" {
+  function_name    = "history-query"
+  role             = aws_iam_role.history_query.arn
+  runtime          = "python3.11"
+  handler          = "history_query.handler.handler"
+  filename         = data.archive_file.history_query_zip.output_path
+  source_code_hash = data.archive_file.history_query_zip.output_base64sha256
+  timeout          = 30
+  memory_size      = 128
+
+  environment {
+    variables = {
+      METADATA_TABLE   = aws_dynamodb_table.video_metadata.name
+      HISTORY_TABLE    = aws_dynamodb_table.status_history.name
+      AWS_ENDPOINT_URL = local.lambda_endpoint_url
+    }
+  }
+}
+
+# --- Gateway route (joins the EXISTING aws_apigatewayv2_api.gateway) ---------
+
+resource "aws_apigatewayv2_integration" "history_query" {
+  api_id                 = aws_apigatewayv2_api.gateway.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.history_query.invoke_arn
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "history_query" {
+  api_id    = aws_apigatewayv2_api.gateway.id
+  route_key = "GET /videos/{videoId}/history"
+  target    = "integrations/${aws_apigatewayv2_integration.history_query.id}"
+}
+
+resource "aws_lambda_permission" "gateway_invoke_history_query" {
+  statement_id  = "AllowAPIGatewayInvokeHistoryQuery"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.history_query.function_name
+  principal     = "apigateway.amazonaws.com"
+  # Scoped to the local stage + history route only.
+  source_arn = "${aws_apigatewayv2_api.gateway.execution_arn}/${aws_apigatewayv2_stage.local.name}/GET/videos/{videoId}/history"
+}
+
 # --- Outputs ---------------------------------------------------------------
 
 output "status_history_table_name" {
@@ -229,4 +358,8 @@ output "history_queue_arn" {
 
 output "history_consumer_function" {
   value = aws_lambda_function.history_consumer.function_name
+}
+
+output "history_query_function" {
+  value = aws_lambda_function.history_query.function_name
 }

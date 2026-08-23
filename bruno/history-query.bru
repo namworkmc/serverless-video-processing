@@ -1,0 +1,57 @@
+meta {
+  name: History Query
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{gatewayBaseUrl}}/videos/{{videoId}}/history
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // Poll-with-timeout (FR-22): the consumer leg is async — retry until
+  // >=1 entry appears or the deadline fails the run. No fixed sleeps.
+  // Bruno 4.0 API: sendRequest takes an axios-style config and returns an
+  // axios response — the parsed body lives on res.data.
+  const videoId = bru.getVar("videoId");
+  if (!videoId) {
+    throw new Error("videoId collection var not set — run Upload Video first");
+  }
+  const url = bru.getEnvVar("gatewayBaseUrl") + "/videos/" + videoId + "/history";
+  const deadline = Date.now() + 120000;
+  let res = await bru.sendRequest({ method: "GET", url: url });
+  while ((!res.data || !res.data.entries || res.data.entries.length === 0)
+         && Date.now() < deadline) {
+    await bru.sleep(2000);
+    res = await bru.sendRequest({ method: "GET", url: url });
+  }
+  if (!res.data || !res.data.entries || res.data.entries.length === 0) {
+    throw new Error("no history entries appeared within 120s");
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.videoId: eq {{videoId}}
+  res.body.entries: isDefined
+}
+
+docs {
+  ## History query (Story 3.2, FR-16 / FR-22)
+  
+  GET the video's status history through the gateway data plane. Chains
+  after `Upload Video`, which captures `videoId` into a collection var.
+  
+  The consumer leg is async, so the pre-request script polls (2s interval,
+  120s deadline) until at least one entry exists; the request then fires
+  once more and the assert block validates that final state. A KNOWN
+  videoId with zero entries is 200 + empty entries (not 404) — that
+  distinction is what makes polling race-free.
+  
+  The api id in `environments/Local.bru` is floci-assigned at gateway
+  creation; if the gateway is ever recreated (fresh floci + apply),
+  re-read it from `terraform output gateway_base_url` and update it
+  there (env-file grammar allows no comments, so the note lives here).
+}

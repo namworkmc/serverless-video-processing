@@ -50,6 +50,9 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
   summary: Update root README.md for the history leg — mermaid architecture diagram (bus → history-queue → history-consumer → status-history) and Status section refresh ("Next: Epic 3" is stale)
   evidence: Story 3.1 review (blind-hunter layer): root README still shows only the trigger leg; docs refresh batched with the retro action-item pattern (lambdas/README.md WAS updated in-story per Story 2.3 precedent)
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-history-query-through-the-gateway.md`
+  summary: Extend the same root README refresh with Story 3.2's gateway surface — ingress table and mermaid diagram show only `POST /videos/upload`; the `GET /videos/{videoId}/history` route and history-query Lambda are absent, and the "⏭️ Next: Epic 3" status log is now two stories stale
+  evidence: Story 3.2 review (blind-hunter layer, inline run): README.md:30/73/321 unchanged by this story per its read-only boundary; lambdas/README.md was updated in-story, root README was not (same batching decision as the Story 3.1 entry above)
 
 ## Resolved
 
