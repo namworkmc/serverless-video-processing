@@ -1,7 +1,7 @@
 """Register the `_shared` directory as the `shared` package for local tests.
 
 In the Lambda zip the package lives at the zip root as `shared/` (see
-terraform/smoke.tf); locally the directory is `lambdas/_shared`. This alias
+terraform/upload.tf); locally the directory is `lambdas/_shared`. This alias
 makes `from shared import ...` resolve identically in both environments.
 """
 

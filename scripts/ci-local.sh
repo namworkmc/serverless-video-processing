@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Local mirror of the GitHub Actions CI pipeline (.github/workflows/ci.yml).
 # Runs the same commands, in the same order, so a green run here predicts
-# a green run in CI. Requires: uv, terraform, docker (for the smoke stage),
+# a green run in CI. Requires: uv, terraform, docker (for the integration stage),
 # gitleaks (for the secrets stage — `scoop install gitleaks`).
 set -euo pipefail
 

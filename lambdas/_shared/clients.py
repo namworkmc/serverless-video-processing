@@ -7,9 +7,9 @@ AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (dummy values in the lab).
 Resource NAMES (tables, buckets, buses) are never typed here — callers pass
 them in from their own Terraform-set env vars.
 
-boto3 availability in the floci runtime image: CONFIRMED by the Story 1.2
-smoke run (`boto3_available: true`). The stdlib/urllib fallback was not
-needed; see lambdas/README.md.
+boto3 availability in the floci runtime image: CONFIRMED (Story 1.2,
+re-proven by every tests/integration/ run of the deployed functions). The
+stdlib/urllib fallback was not needed; see lambdas/README.md.
 """
 
 import os

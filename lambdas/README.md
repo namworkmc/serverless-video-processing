@@ -13,7 +13,6 @@ lambdas/
     errors.py         # domain errors + HTTP error mapping (409/404/400/500)
     clients.py        # boto3 client factories (env-driven, config-not-code)
     tests/            # local pytest suite (never shipped in zips)
-  smoke/              # Story 1.2 smoke fixture (ad-hoc invoke only)
   upload_handler/     # Story 1.3 upload journey (dir/package: upload_handler,
                       # Terraform function name: upload-handler)
   transcode/          # Story 2.1 transcode worker (pure S3 in -> S3 out;
@@ -30,7 +29,7 @@ lambdas/
 
 ## Packaging
 
-Functions are zip-packaged. `terraform/smoke.tf` shows the pattern: one
+Functions are zip-packaged. `terraform/upload.tf` shows the pattern: one
 `archive_file` places the `_shared` package at the zip root as `shared/`
 alongside the function's `handler.py`, so handlers do
 `from shared import status, events, errors, clients`. No Lambda layer
@@ -38,54 +37,10 @@ resources.
 
 ## boto3 availability — CONFIRMED (Story 1.2)
 
-The smoke Lambda ran inside floci 1.6.0's real Docker runtime and reported
-`boto3_available: true` — boto3 ships in the runtime image. `shared.clients`
-uses boto3; the stdlib/urllib fallback was not needed.
-
-## Smoke fixture (Story 1.2)
-
-Declared by `terraform/smoke.tf`: the `video-metadata` table (reused by
-Story 1.3 — do not redeclare it), an IAM role, and the `smoke` function.
-Invoke ad-hoc (inspection only, never part of setup):
-
-```bash
-# bash / git-bash
-aws lambda invoke --endpoint-url http://localhost:4566 \
-  --function-name smoke --payload '{"scenario":"all"}' out.json
-```
-
-```powershell
-# PowerShell (Windows host) — the aws CLI shim on this machine is broken,
-# so invoke via local boto3 instead:
-python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(json.dumps(json.load(c.invoke(FunctionName='smoke', Payload=json.dumps({'scenario':'all'}))['Payload']), indent=2))"
-```
-
-Scenarios: `create`, `create-idempotent`, `transition-legal`,
-`transition-illegal`, `reassert`, `envelope`, `transcode`,
-`state-machine`, `trigger-leg`, `all`. The shared-layer scenarios use a
-fixed test record deleted after every run; the runtime scenarios use a
-fresh uuid4 videoId per run and clean up their records/objects.
-ci-local.sh stage 5 invokes `{"scenario":"all"}` and fails on any
-non-pass.
-
-The runtime scenarios backstop the DEPLOYED epic-2 wiring (zip layout,
-handler strings, env vars, IAM, ESM) — the gap unit tests and
-`terraform validate` cannot see:
-
-- `transcode` — seeds a fixture object + UPLOADED record, invokes the
-  deployed `transcode` zip, asserts the payload contract, the processed
-  object's bytes, and that the record stays UPLOADED (pure worker).
-- `state-machine` — seeds, `StartExecution`s the deployed state machine,
-  polls to SUCCEEDED, asserts the record walked to PROCESSED with
-  `processedKey`, the processed object exists, exactly one
-  `video.processed` with the deterministic eventId arrives on the
-  `smoke-capture-queue` (a smoke fixture declared in `terraform/smoke.tf`
-  — the `video.processed` rule targets it), then re-runs and asserts the
-  execution FAILS at the first condition with no regression and no
-  second event.
-- `trigger-leg` — seeds, publishes `video.uploaded` on the bus, and
-  polls the record until the deployed leg (rule → queue → shim →
-  StartExecution → ASL) walks it to PROCESSED.
+boto3 ships in the floci runtime image (confirmed by the Story 1.2
+fixture run, re-proven by every `tests/integration/` run of the deployed
+functions). `shared.clients` uses boto3; the stdlib/urllib fallback was
+not needed.
 
 ## Upload handler (Story 1.3)
 

@@ -8,12 +8,12 @@
 # videoId) are dropped and acked; transient errors raise for SQS retry.
 #
 # AD-1: a new consumer = new queue + new rule target. The video.uploaded
-# rule (trigger.tf) and the smoke capture rule (smoke.tf) are untouched;
-# this file declares its OWN video.processed rule targeting ONLY the
-# history queue.
+# rule (trigger.tf) and the video.processed capture rule (integration.tf)
+# are untouched; this file declares its OWN video.processed rule targeting
+# ONLY the history queue.
 #
 # REUSES aws_cloudwatch_event_bus.video_bus (upload.tf) and
-# aws_dynamodb_table.video_metadata (smoke.tf) — none redeclared.
+# aws_dynamodb_table.video_metadata (integration.tf) — none redeclared.
 
 # --- status-history table ---------------------------------------------------
 
