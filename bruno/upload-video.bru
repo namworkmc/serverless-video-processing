@@ -20,6 +20,11 @@ assert {
   res.body.videoId: isDefined
 }
 
+script:post-response {
+  // Chain for History Query (Story 3.2): capture the minted videoId.
+  bru.setVar("videoId", res.body.videoId);
+}
+
 docs {
   ## Upload journey (Story 1.3)
   
