@@ -41,7 +41,7 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
    local validation run. Minimum gate for any change:
 
    ```bash
-   bash scripts/ci-local.sh        # full CI mirror: secrets-scan → lint → unit-test → tf-validate → smoke
+   bash scripts/ci-local.sh        # full CI mirror: secrets-scan → lint → unit-test → tf-validate → integration
    ```
 
    Stage-by-stage equivalents (same commands CI runs, in the same order):
@@ -54,10 +54,11 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
    (cd terraform && terraform init -backend=false -input=false && terraform validate)
    ```
 
-   The smoke stage needs Docker; it reuses a healthy running floci. For
-   Terraform-only changes, `terraform fmt -check` + `terraform validate` is the
-   floor; for Lambda changes, add ruff + pytest. The gitleaks stage is cheap
-   (~1s) — run it on every change. Fix failures locally, re-run, then commit.
+   The integration stage needs Docker; it reuses a healthy running floci.
+   For Terraform-only changes, `terraform fmt -check` + `terraform validate`
+   is the floor; for Lambda changes, add ruff + pytest. The gitleaks stage is
+   cheap (~1s) — run it on every change. Fix failures locally, re-run, then
+   commit.
 4. **Conflict resolution: rebase on branches, current strategy into main.**
    When resolving conflicts while syncing a feature/story branch with `main`,
    prefer rebase over merge (`git rebase main` / `git pull --rebase`) to keep
@@ -75,7 +76,7 @@ conventions, packaging, tests), `docs/ci.md` (pipeline design + troubleshooting)
 ## Conventions (observed)
 
 - Commit messages: `type: summary`, often with story refs —
-  `feat: Story 1.2 — shared access layer (lambdas/_shared/) + smoke fixture`,
+  `feat: Story 3.1 — history consumer recording terminal events`,
   `ci: …`, `test: …`, `bmad: …`.
 - One directory per Lambda under `lambdas/`; all handlers import the shared
   access layer as `from shared import status, events, errors, clients`
