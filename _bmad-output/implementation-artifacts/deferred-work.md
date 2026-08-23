@@ -53,6 +53,9 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-2-history-query-through-the-gateway.md`
   summary: Extend the same root README refresh with Story 3.2's gateway surface — ingress table and mermaid diagram show only `POST /videos/upload`; the `GET /videos/{videoId}/history` route and history-query Lambda are absent, and the "⏭️ Next: Epic 3" status log is now two stories stale
   evidence: Story 3.2 review (blind-hunter layer, inline run): README.md:30/73/321 unchanged by this story per its read-only boundary; lambdas/README.md was updated in-story, root README was not (same batching decision as the Story 3.1 entry above)
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2-history-query-through-the-gateway.md`
+  summary: IAM policy/permission scoping is unobservable on floci — the history-query role's least-privilege claims (dynamodb:GetItem on video-metadata, dynamodb:Scan on status-history, logs) and the route-scoped `source_arn` on the invoke permission are not enforced by the emulator, and `terraform validate` is syntax-only, so a wrong action list or over-broad/typo'd source_arn applies green
+  evidence: Story 3.2 review (verification-gap layer): floci runs with no IAM enforcement (dummy creds); inherited posture, not newly introduced — identical to the upload leg (upload.tf) and the Story 3.1 consumer role. Actionable only if/when the project adopts an IAM-enforcing emulator or real-AWS validation
 
 ## Resolved
 

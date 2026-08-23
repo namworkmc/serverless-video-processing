@@ -90,6 +90,11 @@ history-query handler (input = API Gateway v2 payload format 2.0 event):
 - Given the Bruno collection with the history request, when run after the upload journey, then it passes against the gateway URL only — poll-with-timeout, no fixed sleeps — and the returned entries match the ad-hoc `status-history` inspection (FR-22)
 - Given the test suite, when pytest runs, then all new tests pass (handler I/O matrix, purity probe, integration journey) and all existing tests still pass; `bash scripts/ci-local.sh` is green end-to-end
 
+### Review Findings
+
+- [x] [Review][Patch] Known-videoId-with-zero-entries 200 contract unverified at the gateway boundary — unit T2 pins it against fakes, but integration I1 polls the table non-empty before its GET and only manual Bruno exercises the branch end-to-end; a regression of the empty branch at the deployed route would ship with CI green. Fix: integration test using `stack.seed_video()` (metadata record, no history entries) → GET via gateway → assert 200 + `entries == []` [tests/integration/test_history_query.py]
+- [x] [Review][Defer] IAM policy/permission scoping unobservable on floci — least-privilege claims (role policy actions, route-scoped `source_arn`) are not enforced by the emulator and `terraform validate` is syntax-only; a wrong action list would apply green [terraform/history.tf:266] — deferred, pre-existing (same posture as upload leg and Story 3.1 consumer role)
+
 ## Spec Change Log
 
 ## Design Notes

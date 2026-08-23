@@ -33,6 +33,25 @@ def test_history_query_returns_entries_via_gateway(
         stack.cleanup_video(vid)
 
 
+def test_history_query_known_video_no_entries_200(
+        stack, gateway_base_url, binary_payload):
+    """Known videoId with zero history entries -> 200 + entries == []
+    (NOT 404) through the DEPLOYED route — the async-leg distinction the
+    Bruno poll-with-timeout depends on, pinned at the gateway boundary,
+    not just against unit fakes (I/O matrix row 2)."""
+    vid = f"it-empty-{uuid.uuid4()}"
+    stack.seed_video(vid, binary_payload)
+    try:
+        r = requests.get(f"{gateway_base_url}/videos/{vid}/history",
+                         timeout=30)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["videoId"] == vid, body
+        assert body["entries"] == [], body
+    finally:
+        stack.cleanup_video(vid)
+
+
 def test_history_query_unknown_video_id_404(gateway_base_url):
     """Unknown videoId -> the gateway passes the handler's 404 +
     {"error": ...} body through unchanged; the error names the requested
