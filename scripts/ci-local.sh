@@ -29,6 +29,6 @@ COMPOSE_PROJECT_NAME=serverless-video-processing docker compose up -d --wait
 (cd terraform && terraform init -input=false >/dev/null && terraform apply -auto-approve)
 GATEWAY_BASE_URL="$(cd terraform && terraform output -raw gateway_base_url)" \
   uv run --with 'pytest>=8.0' --with requests --with boto3 \
-  pytest tests/integration/ -q
+  pytest tests/integration/ -v
 
 echo "==> CI mirror: all stages green"
