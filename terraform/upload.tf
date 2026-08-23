@@ -4,8 +4,8 @@
 # the upload-handler Lambda (zip: shared/ at root + upload_handler/
 # package), its role, and API Gateway v2 with POST /videos/upload.
 #
-# REUSES aws_dynamodb_table.video_metadata from smoke.tf — the table is
-# NOT redeclared here.
+# REUSES aws_dynamodb_table.video_metadata from integration.tf — the table
+# is NOT redeclared here.
 #
 # Gateway data plane (floci): the Terraform invoke URL does not resolve
 # locally; the gateway is reachable only at

@@ -14,9 +14,9 @@ GitHub Actions pipeline for the serverless-video-processing floci lab.
 | `lint` | `ruff check lambdas/ --select E,F` + `terraform fmt -check -recursive` | both must pass |
 | `unit-test` | `pytest lambdas/` — shared access layer suite (27 tests) | 100% pass |
 | `terraform-validate` | `terraform init -backend=false` + `terraform validate` | valid config |
-| `smoke` | floci via `docker compose up -d --wait` → `terraform apply` → invoke `smoke` Lambda through floci's Lambda API → assert `statusCode==200 && body.all_pass` → `terraform destroy` (always) | smoke report all_pass |
+| `integration` | floci via `docker compose up -d --wait` → `terraform apply` → `pytest tests/integration/` (T1–T10: gateway upload with binary round-trip, auto-processing journey, state machine, transcode, history leg) → `terraform destroy` (always) | 10 integration tests pass |
 
-Job graph: `gitleaks → lint → {unit-test, terraform-validate} → smoke`.
+Job graph: `gitleaks → lint → {unit-test, terraform-validate} → integration`.
 
 ## Secrets scanning (gitleaks)
 
@@ -52,7 +52,7 @@ Concurrency: one run per ref, in-progress runs cancelled.
 ## Secrets
 
 **None required.** floci uses dummy credentials (`test`/`test`), Terraform state
-is local, and the smoke invoke goes through floci's unauthenticated Lambda API.
+is local, and the integration suite talks to floci's unauthenticated APIs.
 The `gitleaks` job passes the auto-provided `GITHUB_TOKEN` (mandatory for
 scanning pull requests) — no repository secret to configure.
 If real-AWS deployment is added later, that gets its own workflow with
@@ -67,17 +67,24 @@ never hardcoded.
 - Actions are on Node-24 majors (`checkout@v5`, `setup-uv@v7`, `setup-terraform@v4`, `upload-artifact@v5`) — GitHub deprecated the Node 20 runner runtime (Sept 2025) and warns on older majors
 - ruff and pytest are pulled ad-hoc by `uv run --with` — no lockfile needed yet
 
-## Smoke stage details
+## Integration stage details
 
-The smoke Lambda (`lambdas/smoke/handler.py`, declared in `terraform/smoke.tf`)
-exercises the shared access layer inside floci's real Docker runtime:
-create, idempotent create, legal/illegal transitions, re-assertion, envelope
-determinism, not-found. It self-cleans its fixed test record, so reruns are
-safe. The CI invoke uses floci's Lambda REST API directly
-(`POST http://localhost:4566/2015-03-31/functions/smoke/invocations`) — no
-`aws` CLI in the pipeline, matching the lab's Terraform-only rule.
+The pytest suite in `tests/integration/` drives the DEPLOYED stack through
+real API Gateway calls (`POST /videos/upload` via floci's
+`_aws/execute-api` data plane) and real AWS-API side-effect reads (S3,
+DynamoDB, SQS, EventBridge, Step Functions). Coverage: binary upload
+round-trip (byte-identical), malformed-request 400s, the full
+auto-processing journey (handler → rule → queue → shim → SFN → transcode →
+publisher), redelivery dedupe, ad-hoc state-machine and transcode invokes,
+and the history leg (recorded / deduped / poison-dropped). Design record:
+`_bmad-output/test-artifacts/integration-test-plan.md`. The gateway base
+URL comes from `terraform output -raw gateway_base_url` (env override
+`GATEWAY_BASE_URL` honored); the capture queue (`smoke-capture-queue`,
+declared in `terraform/integration.tf`) is the `video.processed`
+observation point. No `aws` CLI in the pipeline, matching the lab's
+Terraform-only rule.
 
-`terraform destroy` runs with `if: always()` so a failed smoke never leaves
+`terraform destroy` runs with `if: always()` so a failed suite never leaves
 state behind on the runner. On failure, floci logs are captured and uploaded.
 
 ## Deliberate omissions
@@ -92,7 +99,7 @@ state behind on the runner. On failure, floci logs are captured and uploaded.
 | Symptom | Likely cause / fix |
 | --- | --- |
 | `docker compose up -d --wait` times out | floci image pull slow on cold runner cache; rerun. Locally: check Docker Desktop is running. |
-| Smoke invoke returns 500 with `all_pass: false` | Read the scenario report in the response body — it names the failing check. Pull `smoke-failure` artifact for floci logs. |
+| Integration test fails or times out | Read the failing test's assertion — it names the resource/state that diverged. Polling timeouts are generous (180 s) for cold floci Lambda containers; rerun once on cold-cache flakes. Pull `integration-failure` artifact for floci logs. |
 | `terraform apply` fails with `InvalidClientTokenId` | A service endpoint is missing from the provider `endpoints{}` block (spine AD-8 fact 3). Add it to `terraform/providers.tf`. |
 | Lambda invoke hangs / times out | floci needs the Docker socket to spawn Lambda containers; on a self-hosted runner verify `/var/run/docker.sock` access. GitHub-hosted `ubuntu-latest` provides it. |
 | Ruff fails on a new file | Run `uv run --with ruff ruff check lambdas/ --select E,F` locally and fix. |

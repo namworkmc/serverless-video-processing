@@ -21,7 +21,7 @@
 # FLOCI PLATFORM FACT: floci supports UpdateStateMachine — ASL changes
 # apply in place via `terraform apply`. Documented in README.md.
 #
-# REUSES aws_dynamodb_table.video_metadata (smoke.tf),
+# REUSES aws_dynamodb_table.video_metadata (integration.tf),
 # aws_lambda_function.transcode (transcode.tf), and
 # aws_cloudwatch_event_bus.video_bus (upload.tf) — none redeclared.
 

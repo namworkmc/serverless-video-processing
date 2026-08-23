@@ -9,9 +9,10 @@
 #                      never blocks the pipeline)
 #   unit-test          pytest on lambdas/ (shared access layer suite)
 #   terraform-validate terraform init -backend=false + validate
-#   smoke              floci via docker compose -> terraform apply ->
-#                      invoke smoke Lambda through floci's Lambda API ->
-#                      assert all_pass -> terraform destroy (always)
+#   integration        floci via docker compose -> terraform apply ->
+#                      pytest tests/integration/ (T1-T10: gateway upload,
+#                      auto-processing, state machine, transcode, history)
+#                      -> terraform destroy (always)
 #
 # Deliberate omissions (backend-only stack, see progress doc):
 #   - no sharding (27 tests, single process)
@@ -133,13 +134,17 @@ jobs:
         working-directory: terraform
         run: terraform validate
 
-  smoke:
-    name: Smoke (floci + terraform apply + Lambda invoke)
+  integration:
+    name: Integration (floci + terraform apply + pytest suite)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: [unit-test, terraform-validate]
     steps:
       - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.11"
 
       - uses: hashicorp/setup-terraform@v4
         with:
@@ -156,12 +161,11 @@ jobs:
         working-directory: terraform
         run: terraform apply -auto-approve
 
-      - name: Invoke smoke Lambda via floci
+      - name: Run integration suite
         run: |
-          RESPONSE="$(curl -sS -X POST "http://localhost:4566/2015-03-31/functions/smoke/invocations" \
-            -H 'Content-Type: application/json' -d '{"scenario":"all"}')"
-          echo "$RESPONSE"
-          echo "$RESPONSE" | python3 -c "import json,sys; r=json.load(sys.stdin); sys.exit(0 if r['statusCode']==200 and r['body']['all_pass'] else 1)"
+          GATEWAY_BASE_URL="$(cd terraform && terraform output -raw gateway_base_url)" \
+            uv run --with 'pytest>=8.0' --with requests --with boto3 \
+            pytest tests/integration/ -v
 
       - name: Terraform destroy
         if: always()
@@ -176,6 +180,6 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v5
         with:
-          name: smoke-failure
+          name: integration-failure
           path: floci-logs.txt
           retention-days: 30

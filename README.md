@@ -269,6 +269,7 @@ retried, since a deterministic poison message would retry forever; real
 docker-compose.yaml # floci emulator
 terraform/          # all AWS resources (buckets, bus, tables, lambdas, gateway)
 lambdas/            # Lambda function source code (one dir per function)
+tests/              # integration test suite (CI stage 5, live stack required)
 bruno/              # Bruno API collection (gateway data plane only)
 _bmad-output/       # BMAD planning artifacts (PRD, architecture, epics)
 ```
@@ -328,15 +329,17 @@ enforced via DynamoDB conditional writes — `UpdateItem` +
 (deterministic UUID5 `eventId` envelopes, fixed detail shapes),
 `errors.py` (conflict→409, unknown→404, malformed→400, else 500), and
 `clients.py` (env-driven boto3 factories — `AWS_ENDPOINT_URL`, no
-hardcoded names). The `video-metadata` table and a `smoke` Lambda fixture
-(`terraform/smoke.tf`) run the layer inside floci's real Docker runtime —
-smoke confirmed boto3 present in the floci 1.6.0 image, every scenario
-passes against the real table, and the fixture cleans up after itself.
-27 unit tests.
+hardcoded names). The `video-metadata` table and a throwaway fixture
+Lambda ran the layer inside floci's real Docker runtime — it confirmed
+boto3 present in the floci image, every scenario passed against the real
+table, and the fixture cleaned up after itself. The fixture and its CI
+gate have since been retired: the `tests/integration/` pytest suite is
+the CI stage 5 gate, and the table plus the `video.processed` capture
+queue now live in `terraform/integration.tf`. 27 unit tests.
 
 ✅ **Story 1.1 complete** — the lab substrate is reproducible: floci
 pinned to `1.6.0` in `docker-compose.yaml` (with the Docker socket
-mounted), the Phase 0 smoke resource removed so `terraform/` declares
+mounted), the Phase 0 fixture resource removed so `terraform/` declares
 zero resources (substrate only), the provider `endpoints{}` skeleton
 verified, and the README quick-start documented Terraform-only — no
 `aws` CLI anywhere in setup/teardown.
