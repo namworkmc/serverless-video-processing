@@ -1,0 +1,78 @@
+meta {
+  name: Search Video
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{gatewayBaseUrl}}/videos/search?title=My%20Video
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // Poll-with-timeout (FR-22): the indexing leg is async (upload ->
+  // PROCESSED -> search-consumer upserts the index), so retry until a
+  // result carrying the uploaded videoId appears or the deadline fails
+  // the run. No fixed sleeps.
+  // Bruno 4.0 API: sendRequest takes an axios-style config and returns an
+  // axios response — the parsed body lives on res.data.
+  const videoId = bru.getVar("videoId");
+  if (!videoId) {
+    throw new Error("videoId collection var not set — run Upload Video first");
+  }
+  const title = bru.getVar("videoTitle") || "My Video";
+  const url = bru.getEnvVar("gatewayBaseUrl")
+    + "/videos/search?title=" + encodeURIComponent(title);
+  const deadline = Date.now() + 120000;
+  const hasHit = (res) => !!(res.data && res.data.results
+    && res.data.results.some((r) => r.videoId === videoId));
+  let res = await bru.sendRequest({ method: "GET", url: url });
+  while (!hasHit(res) && Date.now() < deadline) {
+    await bru.sleep(2000);
+    res = await bru.sendRequest({ method: "GET", url: url });
+  }
+  if (!hasHit(res)) {
+    throw new Error("search did not surface " + videoId + " within 120s");
+  }
+}
+
+script:post-response {
+  // The FINAL asserted request itself must prove containment (Story 4.2
+  // review hardening): fail unless this very response carries the
+  // uploaded videoId in results.
+  const videoId = bru.getVar("videoId");
+  if (!(res.status === 200 && res.data && res.data.results
+        && res.data.results.some((r) => r.videoId === videoId))) {
+    throw new Error("final search response does not contain "
+      + videoId + " — status=" + res.status);
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.title: isDefined
+  res.body.results: isDefined
+}
+
+docs {
+  ## Title search (Story 4.2, FR-18 / FR-22)
+  
+  GET title-substring results through the gateway data plane — the third
+  and final client journey. Chains after `Upload Video`, which sends the
+  fixed `title: My Video` and captures BOTH collection vars this request
+  consumes: `videoId` and `videoTitle` (so the searched title always
+  matches what was actually uploaded — no hardcoded title here).
+  
+  The indexing leg is async, so the pre-request script polls (2s interval,
+  120s deadline) until a result carrying `{{videoId}}` exists; the request
+  then fires once more and both the post-response script and the assert
+  block validate that final state proves containment of `{{videoId}}`. A
+  no-match search is 200 + an empty list (not an error) — that distinction
+  is what makes polling race-free.
+  
+  The api id in `environments/Local.bru` is floci-assigned at gateway
+  creation; if the gateway is ever recreated (fresh floci + apply),
+  re-read it from `terraform output gateway_base_url` and update it
+  there (env-file grammar allows no comments, so the note lives here).
+}

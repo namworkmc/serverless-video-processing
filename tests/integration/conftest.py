@@ -35,6 +35,7 @@ UPLOADS_BUCKET = "video-uploads"
 PROCESSED_BUCKET = "video-processed"
 EVENT_BUS = "video-bus"
 HISTORY_TABLE = "status-history"
+SEARCH_INDEX_TABLE = "search-index"
 HISTORY_QUEUE = "history-queue"
 TRIGGER_QUEUE = "processing-trigger-queue"
 CAPTURE_QUEUE = "smoke-capture-queue"
@@ -337,6 +338,12 @@ class Stack:
             FilterExpression=Attr("videoId").eq(video_id))
         return resp.get("Items", [])
 
+    def search_entries(self, video_id):
+        """Direct-table oracle for the search-index (Story 4.2)."""
+        resp = self.dynamodb.Table(SEARCH_INDEX_TABLE).scan(
+            FilterExpression=Attr("videoId").eq(video_id))
+        return resp.get("Items", [])
+
     # --- Cleanup ------------------------------------------------------------
 
     def cleanup_video(self, video_id):
@@ -349,6 +356,12 @@ class Stack:
             table = self.dynamodb.Table(HISTORY_TABLE)
             for item in self.history_entries(video_id):
                 table.delete_item(Key={"eventId": item["eventId"]})
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            table = self.dynamodb.Table(SEARCH_INDEX_TABLE)
+            for item in self.search_entries(video_id):
+                table.delete_item(Key={"videoId": item["videoId"]})
         except Exception:  # noqa: BLE001
             pass
         for bucket, prefix in (
