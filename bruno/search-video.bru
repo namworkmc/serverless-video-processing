@@ -79,8 +79,9 @@ docs {
   no-match search is 200 + an empty list (not an error) — that distinction
   is what makes polling race-free.
   
-  The api id in `environments/Local.bru` is floci-assigned at gateway
-  creation; if the gateway is ever recreated (fresh floci + apply),
-  re-read it from `terraform output gateway_base_url` and update it
-  there (env-file grammar allows no comments, so the note lives here).
+  Do not hand-edit `environments/Local.bru` — its `REPLACE_WITH_API_ID`
+  placeholder stays as committed; the supported path injects the real
+  base URL at run time from `terraform output gateway_base_url`, via the
+  README one-liner (`bru run --env Local --env-var gatewayBaseUrl=...`).
+  (Env-file grammar allows no comments, so this note lives here.)
 }

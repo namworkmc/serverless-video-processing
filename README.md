@@ -169,17 +169,19 @@ the Terraform output at run time, so the committed `REPLACE_WITH_API_ID`
 placeholder never needs hand-editing:
 
 ```bash
-bru run bruno --env Local \
-  --env-var "gatewayBaseUrl=$(cd terraform && terraform output -raw gateway_base_url)"
+cd bruno && bru run --env Local \
+  --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)"
 ```
 
 (Prerequisite: the [Bruno CLI](https://docs.usebruno.com/bru/overview),
-version **4.x** — `npm install -g @usebruno/cli`. The collection's search
-request relies on 4.x script/response APIs; older CLIs may behave
-differently. Editing `Local.bru` by hand still works, but the one-liner
-above is the supported path — it can never drift from a fresh apply. In
-PowerShell, substitute with `$base = terraform -chdir=terraform output -raw
-gateway_base_url` first, then pass `"gatewayBaseUrl=$base"`.)
+version **4.x** — verified with 4.0.0; `npm install -g @usebruno/cli`.
+The collection's search request relies on 4.x script/response APIs;
+older CLIs may behave differently. bru runs only at a collection root,
+hence the `cd bruno` prefix. Editing `Local.bru` by hand still works,
+but the one-liner above is the supported path — it can never drift from
+a fresh apply. In PowerShell, set `$base = terraform -chdir=terraform
+output -raw gateway_base_url` first, then from `bruno/` pass
+`"gatewayBaseUrl=$base"`.)
 
 ## ✅ End-to-end verification (SM-1)
 
@@ -192,8 +194,8 @@ the gateway — with every target service demonstrably exercised:
 docker compose up -d --wait                                  # 1. emulator healthy
 (cd terraform && terraform destroy -auto-approve)            # 2. tear it all down
 (cd terraform && terraform init && terraform apply -auto-approve)   # 3. rebuild from nothing
-bru run bruno --env Local \                                  # 4. full journey
-  --env-var "gatewayBaseUrl=$(cd terraform && terraform output -raw gateway_base_url)"
+(cd bruno && bru run --env Local \                           # 4. full journey
+  --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)")
 ```
 
 **Traceability** — where each service's evidence lives after that run:
@@ -207,6 +209,8 @@ bru run bruno --env Local \                                  # 4. full journey
 | S3 | object readable under `processed/{videoId}/…` in `video-processed` |
 | DynamoDB | `video-metadata` record PROCESSED; `status-history` entries; `search-index` hit |
 
+This evidence is perishable — the next rebuild cycle wipes execution
+history and drains the capture queue, so inspect before re-running.
 Ad-hoc inspection uses local boto3 (endpoint `http://localhost:4566`,
 dummy `test`/`test` credentials) — see `lambdas/README.md` for invoke
 patterns; there is no `aws` CLI anywhere in this procedure.
@@ -278,9 +282,8 @@ python -c "import boto3, json; c = boto3.client('stepfunctions', endpoint_url='h
   `terraform apply`. **Caveat:** because the machine is updated in place,
   a changed ASL can be invisible to an apply that sees no other diff —
   force the replacement with
-  `terraform apply -replace=aws_sfn_state_machine.processing_state_machine`
-  and confirm
-  the new definition via `describe_state_machine`.
+  `terraform apply -replace=aws_sfn_state_machine.processing`
+  and confirm the new definition via `describe_state_machine`.
 - floci's `lambda:invoke` wraps the Lambda result as
   `{Payload: ..., StatusCode: ...}` like real AWS. The Transcode task
   unwraps `$.Payload` via `ResultSelector`, so the ASL is identical on

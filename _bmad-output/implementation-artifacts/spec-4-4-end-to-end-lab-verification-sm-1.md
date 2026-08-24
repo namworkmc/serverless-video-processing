@@ -84,6 +84,8 @@ context:
 
 ## Spec Change Log
 
+- 2026-08-25 (code review): Verification one-liner corrected — bru CLI 4.x executes only at a collection root, so the documented command must run from `bruno/`: `cd bruno && bru run …` with output path `../terraform`. README updated likewise (Bruno section + SM-1 block); proven live post-fix (4/4 requests, 10/10 assertions, exit 0). The frozen Always-tier wording (:24) stays verbatim — its arg-less form remains accurate when executed from `bruno/`.
+
 ## Design Notes
 
 - State-file dance: two checkouts must never point at divergent copies of live state. Copy IN before destroy (else apply tries to recreate everything), copy BACK after (worktree removal would otherwise orphan the live state). Verify parity with `terraform state list | wc -l` before/after.
@@ -98,7 +100,7 @@ context:
 - `rg -n "\-replace" README.md` -- expected: ≥1 hit (caveat present)
 - `rg -n "^\s*aws\s" README.md` -- expected: no hits (no aws CLI shell lines)
 - `(cd terraform && terraform output -raw gateway_base_url)` -- expected: resolvable localhost URL
-- `bru run bruno --env Local --env-var "gatewayBaseUrl=$(cd terraform && terraform output -raw gateway_base_url)"` -- expected: all requests pass, exit 0
+- `cd bruno && bru run --env Local --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)"` -- expected: all requests pass, exit 0 (bru 4.x runs only at a collection root)
 - `git diff main --stat -- terraform/ bruno/` -- expected: EMPTY (unless an Ask First triggered)
 - `bash scripts/ci-local.sh` -- expected: 5 stages green
 - Ad-hoc boto3 reads per Design Notes mapping -- expected: SFN execution, captured event, S3 object, log lines found
@@ -142,3 +144,18 @@ context:
 
 - Sprint tracker synced to review
   [`sprint-status.yaml:60`](./sprint-status.yaml#L60)
+
+### Review Findings
+
+**Code review 2026-08-24 — full mode; layers: blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor.**
+
+- [x] [Review][Patch] Documented one-liner fails on bru CLI 4.x [README.md:172,197; spec Verification] — `bru run bruno …` errors "You can only run at the root of a collection" (folder arg unsupported; collection root is `bruno/`). Corrected everywhere to `cd bruno && bru run --env Local --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)"`; PowerShell variant updated to match; proven live post-fix (4/4 requests, 10/10 assertions, exit 0 under git-bash; pwsh two-step variant also green). Discovered while validating the P-patches against the live stack.
+
+- [x] [Review][Decision] (sanctioned in review — applied) search-video.bru docs block still instructs hand-editing `Local.bru` — bruno/search-video.bru:82–85 tells users to "re-read it from `terraform output gateway_base_url` and update it there", contradicting README.md's new position that the one-liner is the supported path and the placeholder "never needs hand-editing". Any `.bru` edit is Ask First under the frozen spec, so even a comment-only alignment needs explicit sanction.
+- [x] [Review][Patch] `-replace` caveat documents a non-existent resource address [README.md:281] — says `aws_sfn_state_machine.processing_state_machine`; actual resource is `aws_sfn_state_machine.processing` (terraform/processing.tf:174). The command fails with "Resource address not found" when followed; every other artifact (spec-2-2:29, spec-2-3:102, ARCHITECTURE-SPINE:103) uses `.processing`.
+- [x] [Review][Patch] Checklist B5 wording imprecise [atdd-checklist-4-4:53] — "(substring title match)" describes server-side matching; the client-side poll/hit condition is strict `r.videoId === videoId` equality (bruno/search-video.bru:32-33).
+- [x] [Review][Patch] bru CLI version floor unverifiable [README.md:171-175] — README demands 4.x but omits the actually-tested version (4.0.0, recorded only in checklist Deviations); a user on an older CLI hits the exact double-encoding/res.data failures with no diagnostic anchor.
+- [x] [Review][Patch] Traceability table lacks evidence-perishability warning [README.md:200-208] — smoke-capture-queue messages and SFN execution history vanish on the next destroy/rebuild cycle the same section encourages; nothing tells the reader to inspect before re-running.
+- [x] [Review][Defer] No machine-executed guard over collection content / SM-1 ritual [scripts/ci-local.sh, bruno/] — B-range pins are hand-checked markdown; X1 diff gate is review-time only; destroy→apply→bru is never scripted. Recorded in deferred-work.md (tail entry of this branch) and ratified by this review's verification-gap layer; ci-local wiring reserved Ask First by the frozen spec — deferred, pre-existing.
+- [x] [Review][Defer] README rebuild procedure omits two-checkout tfstate hazard [README.md:90-105] — the spec made copy-state-between-checkouts load-bearing for worktree runs, but the documented destroy→apply cycle says nothing about second clones; run from another checkout it silently recreates everything under a new apiId — deferred, pre-existing.
+- [x] [Review][Defer] Checklist gate conventions are presence-only [atdd-checklist-4-4:61,64] — R3 proves the string `-replace` appears but not that the flagged Terraform address exists (this review caught README.md:281 naming a resource that isn't declared); R6 `^\s*aws\s` misses inline usage (`cd x && aws …`, `$(aws …)`) — deferred, pre-existing.

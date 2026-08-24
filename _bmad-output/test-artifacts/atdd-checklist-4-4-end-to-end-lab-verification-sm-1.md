@@ -28,7 +28,7 @@ Prove SM-1, the definition of done: from a clean `terraform destroy` + `apply` o
 ## Design Notes
 
 - **The collection IS the test suite** for the client journeys — assertions live in the `.bru` files (declarative blocks + JS throws); this checklist pins their CONTENT (B-range) so a weakened collection cannot silently pass SM-1.
-- **apiId propagation by command substitution**, never hand-copy: `bru run --env Local --env-var "gatewayBaseUrl=$(cd terraform && terraform output -raw gateway_base_url)"`. Committed files stay environment-neutral (`REPLACE_WITH_API_ID` placeholder remains canonical in git) — closes epic-3 retro AI-11 without committing a machine-specific id.
+- **apiId propagation by command substitution**, never hand-copy: `cd bruno && bru run --env Local --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)"` (bru 4.x runs only at a collection root). Committed files stay environment-neutral (`REPLACE_WITH_API_ID` placeholder remains canonical in git) — closes epic-3 retro AI-11 without committing a machine-specific id.
 - **State-file dance is load-bearing**: two checkouts must never hold divergent copies of live state. Copy `terraform/terraform.tfstate*` from main INTO the worktree BEFORE any plan/apply; copy BACK after (the spec's frozen Always tier scopes the mandatory set to the state files — `.terraform/` is optional since ci-local re-runs `terraform init`). Verify parity via resource-count before/after.
 - **Destroy-on-floci risk retired by precedent**: CI runs `terraform destroy` on every pipeline run (docs/ci.md) — the emulator handles teardown cleanly.
 - **Traceability source mapping** (CloudWatch is emulated — floci emits Lambda logs to container stdout): SFN `list_executions` → `describe_execution` (name/input carry videoId); `smoke-capture-queue` receives `video.processed` (EventBridge leg proof); S3 GetObject on `processedKey` (transcode leg proof); `docker compose logs floci` for invocation logs.
@@ -50,7 +50,7 @@ Prove SM-1, the definition of done: from a clean `terraform destroy` + `apply` o
 - [x] B2 upload asserts 200 + `videoId`, chains `videoId`/`videoTitle` vars for downstream requests
 - [x] B3 malformed-upload asserts 400 + `res.body.error`
 - [x] B4 history request uses poll-with-timeout pre-request loop (~120 s deadline, `bru.sleep` retry), final response asserted
-- [x] B5 search request polls until the uploaded `videoId` appears in results (substring title match), final response asserted
+- [x] B5 search request polls until the uploaded `videoId` appears in results (client-side hit condition is strict `r.videoId === videoId` equality; title-substring matching is server-side semantics), final response asserted
 - [x] B6 every request URL derives ONLY from `{{gatewayBaseUrl}}` — zero direct backend URLs
 - [x] B7 `environments/Local.bru` keeps the `REPLACE_WITH_API_ID` placeholder (environment-neutral in git)
 
@@ -59,7 +59,7 @@ Prove SM-1, the definition of done: from a clean `terraform destroy` + `apply` o
 - [x] R1 quick start shows fixed bring-up order: compose up → health wait → `terraform init` + `apply`
 - [x] R2 clean-rebuild/teardown subsection documents full reproducibility: `terraform destroy` → `docker compose down` → fresh bring-up (the destroy+apply procedure SM-1 demands)
 - [x] R3 `-replace` caveat present near the state-machine/floci-facts section (rg `\-replace` ≥1 hit)
-- [x] R4 Bruno section's PRIMARY path is the one-liner: `bru run --env Local --env-var "gatewayBaseUrl=$(cd terraform && terraform output -raw gateway_base_url)"` — placeholder replacement demoted to optional; no hand-copy required
+- [x] R4 Bruno section's PRIMARY path is the one-liner: `cd bruno && bru run --env Local --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)"` — placeholder replacement demoted to optional; no hand-copy required
 - [x] R5 end-to-end verification (SM-1) subsection: exact reproducibility procedure + where each service's traceability evidence lives
 - [x] R6 no `^\s*aws\s` shell lines anywhere in README (prose "no aws cli" mentions fine)
 
