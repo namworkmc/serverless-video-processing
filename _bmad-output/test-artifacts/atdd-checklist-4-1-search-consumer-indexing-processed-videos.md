@@ -80,7 +80,7 @@ I/O matrix coverage (one test per row minimum):
 - [x] T13 purity probe: client-recorder — only a `dynamodb` resource is ever constructed; never s3/events/states/sqs (guards zip/env scope creep)
 - [x] T14 wire-shape coupling: real `event_publisher.handler` output (mocked events client capturing the published Detail) fed through the search consumer → indexed (producer→consumer contract, same shape as the 3.1 review-loop test)
 
-Fixture discipline: PROCESSED event fixtures built via `shared.events.build_envelope(EVENT_PROCESSED, processed_detail(...))` + flat promotion `{**envelope, **envelope["detail"]}` — the producer's real wire shape, never hand-typed. Sole exception: FAILED/non-PROCESSED fixtures are hand-crafted flat details (build_envelope rejects them by design — see Design Notes).
+Fixture discipline: PROCESSED event fixtures built via `shared.events.build_envelope(EVENT_PROCESSED, processed_detail(...))` + flat promotion `{**envelope, **envelope["detail"]}` — the producer's real wire shape, never hand-typed. Sole exception: non-PROCESSED statuses (build_envelope rejects them by design — see Design Notes). As-built (ratified in code review): those are produced by post-build mutation of an otherwise-real promoted detail (`_flat_detail(status="FAILED")`), which preserves every producer wire field — strictly more faithful than hand-typing a flat detail from scratch.
 
 ## Terraform Checklist (`terraform/search.tf`)
 
@@ -108,7 +108,7 @@ Fixture discipline: PROCESSED event fixtures built via `shared.events.build_enve
 ## Build Evidence (bmad-build, 2026-08-24)
 
 - **Files:** `lambdas/search_consumer/{__init__,handler}.py` + `tests/{conftest,test_search_consumer}.py` (RED confirmed first: 3 failed + 57 import errors before the handler existed), `terraform/search.tf` (new file only).
-- **G2:** `pytest lambdas/ -q` → **319 passed** (60 new search-consumer tests: T1–T14 + config-not-code).
+- **G2:** `pytest lambdas/ -q` → **324 passed** (65 collected search-consumer cases: T1–T14 + config-not-code + review-loop additions — unusable-title poison, deep-nesting skips, padded-title trim, redelivery order pin).
 - **X5 proof:** `git diff main --stat -- terraform/` → empty; `git status terraform/` → only untracked `search.tf`. Post-retro empty state made the apply a full clean bring-up; `terraform apply` green.
 - **L3:** upload `614bb1c4-d245-4d8c-a93e-2b5b861fb0f1` → PROCESSED → search-index entry `{"videoId": "614bb1c4-d245-4d8c-a93e-2b5b861fb0f1", "title": "Search Leg Live Fixture", "processedKey": "processed/614bb1c4-d245-4d8c-a93e-2b5b861fb0f1/fixture.mp4", "indexedAt": "2026-08-24T05:13:44Z"}` (re-read live from floci during review) — title matches metadata record.
 - **L4:** republished identical event → still exactly one entry, videoId/title/processedKey unchanged (`indexedAt` intentionally refreshes — plain-PutItem upsert semantics pinned by review loop 1).
@@ -139,6 +139,6 @@ Fixture discipline: PROCESSED event fixtures built via `shared.events.build_enve
 ## Completion Summary
 
 - **Checklist:** `_bmad-output/test-artifacts/atdd-checklist-4-1-search-consumer-indexing-processed-videos.md`
-- **Story handoff:** Story 4.1 ACs live in `_bmad-output/planning-artifacts/epics.md` (no separate spec file yet; the build story may mint `spec-4-1-*.md` per convention)
+- **Story handoff:** Story 4.1 ACs live in `_bmad-output/planning-artifacts/epics.md`; the build story minted `spec-4-1-search-consumer-indexing-processed-videos.md` (shipped in the same PR) per convention
 - **Key risks:** status-filter correctness (T2/T3/L5), title provenance from metadata (T1/L3), upsert-not-conditional-write discipline (T4/L4)
 - **Next:** `bmad-build` Story 4.1 in a fresh context window (RED suite from this checklist → GREEN → terraform → live → gate)

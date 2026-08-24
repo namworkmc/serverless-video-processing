@@ -76,7 +76,7 @@ context:
 - [x] `lambdas/search_consumer/tests/conftest.py` — create: copy history_consumer conftest (sys.path + shared alias).
 - [x] `lambdas/search_consumer/tests/test_search_consumer.py` — create RED suite: checklist T1–T14 (happy, FAILED filter, non-terminal filter, redelivery overwrite, poison, transient metadata, transient write, stringified detail, malformed parametrize, unknown-status filtered, non-SQS, mixed batch, purity probe, producer wire-shape coupling) + config-not-code accessor tests. Run → fails on import.
 - [x] `lambdas/search_consumer/__init__.py` + `lambdas/search_consumer/handler.py` — create: minimal GREEN implementation per I/O matrix; summary `{processed, indexed, filtered, dropped, skipped}`.
-- [x] `terraform/search.tf` — create: checklist X1–X9 (table, queue, policy, new rule+target, zip, IAM, Lambda env, ESM, outputs). X5: existing .tf files untouched.
+- [x] `terraform/search.tf` — create: checklist X1–X10 (table, queue, policy, new rule+target, zip, IAM, Lambda env, ESM, outputs). X5: existing .tf files untouched.
 - [x] Live verification L1–L7 on floci (checklist): apply diff clean, upload→index entry, republish→still one, hand-crafted FAILED→no entry, history leg regression intact, consumer logs show indexed/filtered lines.
 - [x] Update checklist boxes + sprint-status `4-1-search-consumer-indexing-processed-videos` → done evidence.
 
@@ -86,6 +86,22 @@ context:
 - Given a hand-crafted `video.processed` event with `status=FAILED`, when published, then no search-index entry exists for that videoId.
 - Given the same PROCESSED event republished, when the consumer processes it again, then still exactly one entry, fields unchanged.
 - Given the full suite, when `bash scripts/ci-local.sh` runs, then all 5 stages green.
+
+### Review Findings
+
+From bmad-code-review of PR #23 (2026-08-24) — layers: blind-hunter, edge-case-hunter, verification-gap, acceptance-auditor. All patches applied and re-gated (330 unit tests, ci-local 5/5).
+
+- [x] [Review][Patch] RecursionError escape on deeply nested stringified detail [`lambdas/search_consumer/handler.py:98`] — parse_detail's inner json.loads raises RecursionError (not ValueError); now caught → skipped like any malformed record
+- [x] [Review][Patch] Padded metadata titles stored untrimmed [`lambdas/search_consumer/handler.py:157`] — write `title.strip()`; pinned by a padded-title test
+- [x] [Review][Patch] Mixed-batch "in order" clause unpinned [`lambdas/search_consumer/tests/test_search_consumer.py:563`] — T12 now asserts sequential lookup order
+- [x] [Review][Patch] Literal empty-string field never exercised [`lambdas/search_consumer/tests/test_search_consumer.py:478`] — T9 split into `""` and `"   "` parametrizes
+- [x] [Review][Patch] Stale artifact refs: evidence said 60 tests/319 passed (actual 65/330 after fixes); Completion Summary claimed "no separate spec file yet"; X-range cited as X1–X9 vs checklist's X1–X10 [`_bmad-output/test-artifacts/atdd-checklist-4-1-search-consumer-indexing-processed-videos.md`]
+- [x] [Review][Patch] Fixture-discipline deviation unratified — non-PROCESSED fixtures built by post-build mutation, not hand-typed; ratified in checklist with rationale (strictly more wire-faithful)
+- [x] [Review][Patch] epic-4-context documented a 5-field detail shape contradicting the enforced flat wire (missing eventId/schemaVersion) [`_bmad-output/implementation-artifacts/epic-4-context.md:49`]
+- [x] [Review][Defer] Search-leg wiring has no repeatable automated integration coverage (zip blocks/rule pattern/env names) — deferred, already recorded in deferred-work.md during build-loop review; Story 4.4 SM-1 is the interim net
+- [x] [Review][Defer] Search-leg README/docs surface ships with Story 4.4's verification pass [`deferred-work.md`] — deferred, pre-existing docs-pass convention (spec-2-3 precedent)
+
+Dismissed (7): spec-done/sprint-review "contradiction" (by-design state machine), deferred-work format claim (format matches file convention), logs `Resource = "*"` (history.tf parity), queue-policy `depends_on` race (parity; floci lab), MemoryError catch (theoretical), `generatedTestFiles: []` frontmatter (documented 3.1 convention), event-vs-metadata status divergence (unreachable via wired paths).
 
 ## Spec Change Log
 

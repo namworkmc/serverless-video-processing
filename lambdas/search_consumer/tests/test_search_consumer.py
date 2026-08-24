@@ -263,6 +263,12 @@ class TestHappyIndex:
             handler(_sqs_event(json.dumps(_eb_event())), None)
         assert any(VIDEO_ID in r.message for r in caplog.records)
 
+    def test_padded_metadata_title_stored_trimmed(self, deps):
+        from search_consumer.handler import handler
+        deps[METADATA_TABLE].records[VIDEO_ID]["title"] = "  Padded Title  "
+        handler(_sqs_event(json.dumps(_eb_event())), None)
+        assert deps[INDEX_TABLE].items[VIDEO_ID]["title"] == "Padded Title"
+
 
 # ---------------------------------------------------------------------------
 # T2 — Status filter: FAILED never indexed (matrix row 2, AC3, FR-17 core)
@@ -460,6 +466,15 @@ class TestMalformedRecords:
     @pytest.mark.parametrize("field", _REQUIRED)
     def test_empty_required_field_skipped(self, deps, field):
         from search_consumer.handler import handler
+        detail = _flat_detail(**{field: ""})
+        summary = handler(_sqs_event(json.dumps(_eb_event(detail))), None)
+        assert summary["skipped"] == 1
+        assert deps[INDEX_TABLE].put_calls == []
+        assert deps[METADATA_TABLE].get_calls == []
+
+    @pytest.mark.parametrize("field", _REQUIRED)
+    def test_whitespace_required_field_skipped(self, deps, field):
+        from search_consumer.handler import handler
         detail = _flat_detail(**{field: "   "})
         summary = handler(_sqs_event(json.dumps(_eb_event(detail))), None)
         assert summary["skipped"] == 1
@@ -502,6 +517,19 @@ class TestMalformedRecords:
         for _ in range(20000):
             body = f"[{body}]"
         summary = handler(_sqs_event(body), None)
+        assert summary["skipped"] == 1
+        assert deps[INDEX_TABLE].put_calls == []
+
+    def test_deeply_nested_stringified_detail_skipped(self, deps):
+        """parse_detail's INNER json.loads (string detail) raises
+        RecursionError, not ValueError — still malformed: skipped."""
+        from search_consumer.handler import handler
+        deep = "1"
+        for _ in range(20000):
+            deep = f"[{deep}]"
+        event = _eb_event()
+        event["detail"] = deep
+        summary = handler(_sqs_event(json.dumps(event)), None)
         assert summary["skipped"] == 1
         assert deps[INDEX_TABLE].put_calls == []
 
@@ -563,6 +591,10 @@ class TestMixedBatch:
         assert summary == {"processed": 4, "indexed": 1, "filtered": 1,
                            "dropped": 1, "skipped": 1}
         assert list(deps[INDEX_TABLE].items) == [VIDEO_ID]
+        # "In order" pin: lookups happen sequentially in record order
+        # (happy first, then the poison record) — no reordering.
+        assert deps[METADATA_TABLE].get_calls == [
+            {"videoId": VIDEO_ID}, {"videoId": "unknown-video"}]
 
 
 # ---------------------------------------------------------------------------

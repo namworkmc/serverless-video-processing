@@ -97,7 +97,13 @@ def _process_record(record):
     except (ValueError, RecursionError):
         body_obj = None
 
-    detail = events.parse_detail(body_obj)
+    # parse_detail tolerates a JSON-stringified detail, but a deeply
+    # nested string can raise RecursionError inside it — same malformed-
+    # record policy as the body parse above (skipped, never retried).
+    try:
+        detail = events.parse_detail(body_obj)
+    except (ValueError, RecursionError):
+        detail = None
     if detail is None:
         logger.warning(
             "skipping malformed record: no parseable EventBridge detail")
@@ -151,7 +157,7 @@ def _process_record(record):
     _index_table().put_item(
         Item={
             "videoId": video_id,
-            "title": title,
+            "title": title.strip(),
             "processedKey": fields["processedKey"],
             "indexedAt": status._now_iso(),
         },

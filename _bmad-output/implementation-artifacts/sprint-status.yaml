@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-18-2026 22:19
-last_updated: 08-24-2026 11:45
+last_updated: 08-24-2026 12:40
 project: serverless-video-processing
 project_key: NOKEY
 tracking_system: file-system
