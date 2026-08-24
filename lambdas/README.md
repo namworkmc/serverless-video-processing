@@ -28,6 +28,16 @@ lambdas/
                       # history through the gateway; dir/package:
                       # history_query, Terraform function name:
                       # history-query)
+  search_consumer/    # Story 4.1 search consumer (video.processed ->
+                      # search-index, dedupe by videoId; dir/package:
+                      # search_consumer, Terraform function name:
+                      # search-consumer)
+  search_query/       # Story 4.2 title search (GET /videos/search?title=
+                      # through the gateway; dir/package: search_query,
+                      # Terraform function name: search-query)
+  search_rebuild/     # Story 4.3 admin-only index rebuild (direct invoke
+                      # ONLY; dir/package: search_rebuild, Terraform
+                      # function name: search-rebuild)
   ...
 ```
 
@@ -206,6 +216,39 @@ Config-not-code: `METADATA_TABLE`, `HISTORY_TABLE`, `AWS_ENDPOINT_URL`
 are Terraform-set env vars. The role is least-privilege: logs +
 `dynamodb:GetItem` on `video-metadata` + `dynamodb:Scan` on
 `status-history`.
+
+## search-rebuild (Story 4.3)
+
+`search_rebuild/` (Terraform function name `search-rebuild`, declared in
+`terraform/search-rebuild.tf`) repopulates the derived, disposable
+`search-index` table from `video-metadata` (FR-19/AD-3). It is an
+ADMIN tool reachable ONLY by direct invoke: the Terraform file
+deliberately contains no gateway integration/route/permission, no SQS
+queue, no EventBridge rule/target, and no event-source mapping — the
+admin-only constraint holds by structural absence, and a unit test
+(`test_terraform_admin_only.py`) re-proves it on every run. The Bruno
+collection does not expose it.
+
+One pass: Scan `video-metadata` with FilterExpression `#s = :st` bound
+to `status.PROCESSED` (selection in the query; single scan — pagination
+out of scope per NFR-7 lab scale, truncation logged), then upsert each
+hit as `{videoId, title, processedKey, indexedAt}` — the exact entry
+shape search-consumer writes, all string fields whitespace-stripped.
+The PK is the dedupe: re-invocation overwrites, never duplicates,
+never deletes. Unusable records are skipped + logged, not fatal;
+transient errors propagate raw — no HTTP mapping for a non-HTTP tool.
+
+Config-not-code: `METADATA_TABLE`, `SEARCH_INDEX_TABLE`,
+`AWS_ENDPOINT_URL` are Terraform-set env vars. The role is
+least-privilege: logs + `dynamodb:Scan` on `video-metadata` +
+`dynamodb:PutItem` on `search-index`.
+
+Invoke ad-hoc after clearing the index (local boto3 — inspection/admin
+only, never setup; same pattern as transcode):
+
+```bash
+python -c "import boto3, json; c = boto3.client('lambda', endpoint_url='http://localhost:4566', region_name='us-east-1', aws_access_key_id='test', aws_secret_access_key='test'); print(json.dumps(json.load(c.invoke(FunctionName='search-rebuild', Payload=json.dumps({}))['Payload']), indent=2))"
+```
 
 ## Local tests
 
