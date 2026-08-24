@@ -76,3 +76,7 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-2-title-search-through-the-gateway.md`
   summary: Search-query surface docs — lambdas/README inventory/section/test-counts and top-level README third route (+ stale "Next: Epic 3" note) — ship with Story 4.4's docs pass
   evidence: Extends the ratified Epic-4 docs-pass deferral recorded during Story 4.1 review ("Search-leg README/docs surface ships with Story 4.4's verification pass"); same pre-existing convention (spec-2-3 precedent), same landing point; surfaced incidentally by Story 4.2 review run 1
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-4-end-to-end-lab-verification-sm-1.md`
+  summary: Bruno collection content pins (B-range: poll loops, videoId containment proof, gateway-only URLs, searchTitle interpolation) are hand-checked markdown, not executable gates - a weakened .bru file would pass SM-1 silently until a human reruns the collection
+  evidence: Story 4.4 review (verification-gap layer) proved no script/test/workflow reads any .bru file and ci-local has no bru stage; suggested shape is rg gates over bruno/*.bru mirroring R3/R6's mechanical idiom or a pure-pytest structural checker per the test_terraform_admin_only.py precedent; needs ci-local wiring which the frozen spec reserved as Ask First
