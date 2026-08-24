@@ -40,7 +40,7 @@ import json
 import logging
 import os
 
-from shared import clients, status
+from shared import clients, events, status
 from shared.errors import (MalformedInputError, NotFoundError,
                            is_conditional_check_failed)
 
@@ -76,21 +76,6 @@ def _history_table():
 # Record parsing
 # ---------------------------------------------------------------------------
 
-def _parse_detail(body_obj):
-    """Return the EventBridge event's detail as a dict, or None if the
-    body is not a parseable EventBridge event. Tolerates a detail that
-    arrives JSON-stringified (mirrors sfn_trigger_shim)."""
-    if not isinstance(body_obj, dict):
-        return None
-    detail = body_obj.get("detail")
-    if isinstance(detail, str):
-        try:
-            detail = json.loads(detail)
-        except ValueError:
-            return None
-    return detail if isinstance(detail, dict) else None
-
-
 def _process_record(record):
     """Process one SQS record.
 
@@ -105,7 +90,7 @@ def _process_record(record):
     except ValueError:
         body_obj = None
 
-    detail = _parse_detail(body_obj)
+    detail = events.parse_detail(body_obj)
     if detail is None:
         logger.warning(
             "skipping malformed record: no parseable EventBridge detail")

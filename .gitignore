@@ -56,3 +56,6 @@ terraform.rc
 # Custom
 .agents
 .worktrees/
+
+# Transient full-diff review scaffolding (never commit)
+_bmad-output/implementation-artifacts/review-prompt-*.md

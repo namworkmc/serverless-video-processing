@@ -38,7 +38,7 @@ import logging
 import os
 import re
 
-from shared import clients
+from shared import clients, events
 from shared.errors import MalformedInputError, is_client_error_code
 
 logger = logging.getLogger(__name__)
@@ -89,22 +89,6 @@ def _is_execution_already_exists(exc):
     return is_client_error_code(exc, "ExecutionAlreadyExists")
 
 
-def _parse_detail(body_obj):
-    """Return the EventBridge event's detail as a dict, or None if the
-    body is not a parseable EventBridge event. Tolerates a detail that
-    arrives JSON-stringified (the exact floci encoding is confirmed by
-    the live AC run)."""
-    if not isinstance(body_obj, dict):
-        return None
-    detail = body_obj.get("detail")
-    if isinstance(detail, str):
-        try:
-            detail = json.loads(detail)
-        except ValueError:
-            return None
-    return detail if isinstance(detail, dict) else None
-
-
 def _process_record(record):
     """Process one SQS record. Returns 'started' | 'deduped' | 'skipped'.
 
@@ -117,7 +101,7 @@ def _process_record(record):
     except ValueError:
         body_obj = None
 
-    detail = _parse_detail(body_obj)
+    detail = events.parse_detail(body_obj)
     if detail is None:
         logger.warning(
             "skipping malformed record: no parseable EventBridge detail")
