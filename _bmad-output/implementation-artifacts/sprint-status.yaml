@@ -56,7 +56,7 @@ development_status:
   epic-4: in-progress
   4-1-search-consumer-indexing-processed-videos: done
   4-2-title-search-through-the-gateway: done
-  4-3-admin-only-index-rebuild: review
+  4-3-admin-only-index-rebuild: done
   4-4-end-to-end-lab-verification-sm-1: backlog
   epic-4-retrospective: optional
 action_items:
