@@ -23,6 +23,9 @@ assert {
 script:post-response {
   // Chain for History Query (Story 3.2): capture the minted videoId.
   bru.setVar("videoId", res.body.videoId);
+  // Chain for Search Video (Story 4.2): capture the searched title at
+  // the source, so the search request never hardcodes it.
+  bru.setVar("videoTitle", "My Video");
 }
 
 docs {

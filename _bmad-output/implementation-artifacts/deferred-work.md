@@ -72,3 +72,7 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1-search-consumer-indexing-processed-videos.md`
   summary: Search-leg documentation (README architecture diagram edge, upload-now-also-indexes flow, lambdas/README function listing) ships with Story 4.4's end-to-end verification pass instead of this PR
   evidence: Code review (blind hunter) noted a new table/queue/rule/Lambda landed with no docs surface; precedent is spec-2-3, where the trigger-leg README update was split into its own deliverable. epic-context assigns the README bring-up/verification pass to the epic's final story, so documenting the leg piecemeal now would be immediately rewritten in 4.4
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-2-title-search-through-the-gateway.md`
+  summary: Search-query surface docs — lambdas/README inventory/section/test-counts and top-level README third route (+ stale "Next: Epic 3" note) — ship with Story 4.4's docs pass
+  evidence: Extends the ratified Epic-4 docs-pass deferral recorded during Story 4.1 review ("Search-leg README/docs surface ships with Story 4.4's verification pass"); same pre-existing convention (spec-2-3 precedent), same landing point; surfaced incidentally by Story 4.2 review run 1
