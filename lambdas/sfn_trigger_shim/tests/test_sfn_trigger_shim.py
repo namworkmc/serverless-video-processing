@@ -470,27 +470,33 @@ class TestPurity:
         assert recorder.requested == ["states"]
 
     def test_handler_module_imports_only_clients_from_shared(self):
-        """The module must not import shared.status or shared.events —
-        the shim neither writes status nor constructs envelopes. AST-based
-        so docstrings mentioning them can't false-positive."""
+        """The module must not import shared.status, and may touch
+        shared.events only to UNWRAP a delivered envelope (parse_detail) —
+        never to construct one (build_envelope / uploaded_detail /
+        processed_detail are publisher-side, AD-4/AD-6). AST-based so
+        docstrings mentioning them can't false-positive."""
         import ast
         import inspect
 
         import sfn_trigger_shim.handler as h
         tree = ast.parse(inspect.getsource(h))
-        imported = []
+        imported = []  # (module, name) pairs; plain imports -> (name, None)
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 base = node.module or ""
-                imported.extend(
-                    f"{base}.{a.name}" if base else a.name
-                    for a in node.names)
+                imported.extend((base, a.name) for a in node.names)
             elif isinstance(node, ast.Import):
-                imported.extend(a.name for a in node.names)
-        assert "shared.clients" in imported
+                imported.extend((a.name, None) for a in node.names)
+        modules = {f"{m}.{n}" if m else n for m, n in imported}
+        assert "shared.clients" in modules
         assert any(m == "shared.errors" or m.startswith("shared.errors.")
-                   for m in imported)
+                   for m in modules)
         assert not any(m == "shared.status" or m.startswith("shared.status.")
-                       for m in imported)
-        assert not any(m == "shared.events" or m.startswith("shared.events.")
-                       for m in imported)
+                       for m in modules)
+        events_bindings = {
+            name for m, name in imported
+            if m == "shared.events" or m.startswith("shared.events.")
+        } - {None}
+        # `from shared import events` binds the module itself; anything
+        # else must be the unwrap helper and nothing else.
+        assert events_bindings <= {"events", "parse_detail"}

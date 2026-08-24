@@ -15,6 +15,7 @@ The detail payload shapes are FIXED here (AD-6):
     video.processed -> {videoId, status, bucket, originalKey, processedKey}
 """
 
+import json
 import uuid
 
 SCHEMA_VERSION = "1"
@@ -85,3 +86,23 @@ def processed_detail(video_id, bucket, original_key, processed_key):
         "originalKey": original_key,
         "processedKey": processed_key,
     }
+
+
+def parse_detail(body_obj):
+    """Consumer-side counterpart to build_envelope: return the EventBridge
+    event's detail as a dict, or None if the body is not a parseable
+    EventBridge event. Tolerates a detail that arrives JSON-stringified
+    (the exact floci encoding is confirmed by the live AC run).
+
+    Every SQS consumer unwraps Records[].body -> envelope -> detail
+    through this one helper — one definition, no per-consumer copies.
+    """
+    if not isinstance(body_obj, dict):
+        return None
+    detail = body_obj.get("detail")
+    if isinstance(detail, str):
+        try:
+            detail = json.loads(detail)
+        except ValueError:
+            return None
+    return detail if isinstance(detail, dict) else None

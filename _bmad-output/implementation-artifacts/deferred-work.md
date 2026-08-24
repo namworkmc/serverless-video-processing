@@ -36,6 +36,7 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
   summary: Consolidate the duplicated _parse_detail EventBridge-unwrap helper (sfn_trigger_shim/handler.py and history_consumer/handler.py are verbatim copies) into the shared layer
   evidence: Story 3.1 review (blind-hunter layer): second identical copy now exists; same duplication class epic-2-retro-item-6 resolved for _require_field; the Story 3.1 spec's "no new shared-layer code" boundary blocked consolidation in-story
+  status: resolved 2026-08-24 (epic-3 retro AI-4) — shared.events.parse_detail is the single definition; both handlers call it, pre-empting search-consumer's third copy
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-history-consumer-recording-terminal-events.md`
   summary: Harden the history consumer to cross-check incoming eventId against the deterministic derivation events.event_id(videoId, status) and treat a mismatch as malformed
   evidence: Story 3.1 review (blind-hunter layer): dedupe rests on eventId being the UUID5 of (videoId, status), but the handler trusts the arriving eventId; a fabricated eventId paired with a KNOWN videoId is written as-is. Mitigated today by AD-6's closed publisher allow-list (only event-publisher constructs video.processed envelopes); adding the check changes frozen I/O-matrix behavior, so it needs a spec-level decision
