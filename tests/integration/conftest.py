@@ -41,6 +41,7 @@ TRIGGER_QUEUE = "processing-trigger-queue"
 CAPTURE_QUEUE = "smoke-capture-queue"
 STATE_MACHINE_NAME = "processing-state-machine"
 TRANSCODE_FUNCTION = "transcode"
+REBUILD_FUNCTION = "search-rebuild"
 
 # Frozen wire contract (lambdas/_shared/events.py:24,38-40). Re-derived here
 # rather than imported so the suite stays independent of the zip package layout.
@@ -331,6 +332,26 @@ class Stack:
             raise RuntimeError(f"transcode invocation failed: {body}")
         return body
 
+    def invoke_search_rebuild(self, payload):
+        """Direct invoke of the DEPLOYED search-rebuild through floci's
+        Lambda REST API (Story 4.3 — ad-hoc admin, never setup)."""
+        resp = requests.post(
+            f"{ENDPOINT_URL}/2015-03-31/functions/{REBUILD_FUNCTION}"
+            "/invocations",
+            json=payload, timeout=60)
+        assert resp.status_code == 200, (
+            f"search-rebuild invoke HTTP {resp.status_code}: {resp.text}")
+        body = resp.json()
+        if isinstance(body, dict) and "Payload" in body:
+            body = body["Payload"]
+            if isinstance(body, str):
+                body = json.loads(body)
+        if isinstance(body, dict) and (
+                "errorType" in body or "errorMessage" in body):
+            raise RuntimeError(
+                f"search-rebuild invocation failed: {body}")
+        return body
+
     # --- status-history -----------------------------------------------------
 
     def history_entries(self, video_id):
@@ -343,6 +364,23 @@ class Stack:
         resp = self.dynamodb.Table(SEARCH_INDEX_TABLE).scan(
             FilterExpression=Attr("videoId").eq(video_id))
         return resp.get("Items", [])
+
+    def clear_search_index(self):
+        """Ad-hoc admin clear of the whole derived index (Story 4.3's
+        disposable proof: the rebuild must be able to bring it back).
+        LOAD-BEARING SETUP, not best-effort cleanup: a partial or failed
+        clear would fake a rebuild success, so this paginates the scan
+        and lets ANY error raise."""
+        table = self.dynamodb.Table(SEARCH_INDEX_TABLE)
+        kwargs = {}
+        while True:
+            resp = table.scan(**kwargs)
+            for item in resp.get("Items", []):
+                table.delete_item(Key={"videoId": item["videoId"]})
+            last_key = resp.get("LastEvaluatedKey")
+            if not last_key:
+                return
+            kwargs = {"ExclusiveStartKey": last_key}
 
     # --- Cleanup ------------------------------------------------------------
 
