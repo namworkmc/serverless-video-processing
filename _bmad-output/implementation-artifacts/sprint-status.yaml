@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-18-2026 22:19
-last_updated: 08-24-2026 09:53
+last_updated: 08-24-2026 11:45
 project: serverless-video-processing
 project_key: NOKEY
 tracking_system: file-system
@@ -48,7 +48,7 @@ development_status:
   2-3-trigger-leg-eventbridge-rule-queue-and-shim: done
   epic-2-retrospective: done
 
-  epic-3: in-progress
+  epic-3: done
   3-1-history-consumer-recording-terminal-events: done
   3-2-history-query-through-the-gateway: done
   epic-3-retrospective: done
@@ -144,7 +144,7 @@ action_items:
       - committed concrete id 6a53d768c7 404s against any fresh terraform apply (proven
       live in this retro); breaks Story 4.4 SM-1"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-08-24.md"
   - id: "epic-3-retro-item-12-reconcile-epics-md-rule-wording-to-as-bu"
     epic: 3
@@ -152,19 +152,19 @@ action_items:
       and Story 4.1 AC1 fans-out-to-both-queues describe one-rule/multi-target; as-built
       is one rule per consumer (video-processed-to-history); fix 4.1 before drafting"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-08-24.md"
   - id: "epic-3-retro-item-13-stop-committing-review-prompt-artifacts"
     epic: 3
     action: "Stop committing review-prompt artifacts - delete or gitignore _bmad-output/implementation-artifacts/review-prompt-*.md
       (~3814 lines of transient review scaffolding committed in 6b2d8f6)"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-08-24.md"
   - id: "epic-3-retro-item-14-consolidate-_parse_detail-into-shared-la"
     epic: 3
     action: "Consolidate _parse_detail into shared layer before Epic 4.1 - two verbatim
       copies (sfn_trigger_shim + history_consumer); search consumer would be the third"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-08-24.md"
