@@ -94,7 +94,7 @@ NFR-8: Terraform-only setup/teardown — all resource creation is attributable t
 
 **Architecture rules binding implementation (AD-1…AD-9):**
 
-- Event backbone: one custom EventBridge bus; normative routing — `video.uploaded` → processing-trigger queue only; `video.processed` → history queue and search queue only; one SQS queue per consumer; no SNS; new consumer = new queue + new rule target.
+- Event backbone: one custom EventBridge bus; normative routing — `video.uploaded` → processing-trigger queue only; `video.processed` → history queue and search queue only; one SQS queue per consumer; no SNS; new consumer = new queue + new rule targeting only that queue (as-built: each consumer leg owns its rule — `video-processed-to-history`).
 - No metadata service-Lambda: status transitions enforced by DynamoDB conditional writes (`UpdateItem` with `ConditionExpression: #s = :expected`) issued through a shared access layer (`lambdas/_shared/`); create is idempotent via `PutItem` with `attribute_not_exists(videoId)`; the shared layer is the only code that knows the legal-transition table; UPLOADED minted only by the upload handler, PROCESSING/PROCESSED/FAILED only by the processing state machine.
 - Three DynamoDB tables, one entity per table: `video-metadata` (PK videoId, source of truth), `status-history` (PK eventId, append-only, derived), `search-index` (PK videoId, upsert, derived); derived tables are disposable/rebuildable; title-substring search = Scan with contains filter; no function reads a derived table to answer a question the metadata table owns.
 - Processing state machine ASL, in order: `Task(dynamodb:updateItem UPLOADED→PROCESSING)` → `Task(lambda:invoke transcode)` → `Task(dynamodb:updateItem →PROCESSED)` → `Task(lambda:invoke event-publisher)`; transcode Lambda is a pure worker (S3 in → S3 out, no status writes, no events); ASL inline condition pairs MUST mirror the shared layer's legal-transition table (a transition-table change is one coordinated ASL + shared-layer change).
@@ -347,7 +347,7 @@ So that the pipeline's terminal events leave a queryable, deduplicated audit tra
 
 **Given** Terraform declares the `status-history` table (PK `eventId`, attributes: videoId, status, timestamp), the `history-queue` (SQS), the EventBridge rule matching `video.processed` targeting **only** the history queue, the `history-consumer` Lambda, its IAM role, and the SQS event-source mapping
 **When** `terraform apply` runs
-**Then** the wiring exists — and the `video.processed` rule now targets the history queue in addition to any existing targets, without altering the `video.uploaded` rule (AD-1: new consumer = new queue + new rule target)
+**Then** the wiring exists — a NEW `video.processed` rule (`video-processed-to-history`) targets **only** the history queue, leaving the existing `video.uploaded` rule and every other resource unchanged (AD-1: new consumer = new queue + new rule)
 
 **Given** a video that has processed to `PROCESSED` (Epic 2)
 **When** the consumer receives the SQS record
@@ -402,9 +402,9 @@ So that processed videos become searchable — and I learn status-filtered consu
 
 **Acceptance Criteria:**
 
-**Given** Terraform declares the `search-index` table (PK `videoId`, attributes: title, processedKey, indexedAt), the `search-queue` (SQS), the EventBridge rule matching `video.processed` targeting the search queue (added alongside the history queue target — AD-1), the `search-consumer` Lambda, its IAM role, and the SQS event-source mapping
+**Given** Terraform declares the `search-index` table (PK `videoId`, attributes: title, processedKey, indexedAt), the `search-queue` (SQS), the EventBridge rule matching `video.processed` targeting **only** the search queue (a NEW rule `video-processed-to-search`, mirroring the history leg's own `video-processed-to-history` rule — AD-1), the `search-consumer` Lambda, its IAM role, and the SQS event-source mapping
 **When** `terraform apply` runs
-**Then** the wiring exists — the `video.processed` rule now fans out to both the history and search queues, each consumer behind its own queue
+**Then** the wiring exists — two independent rules route `video.processed` (`video-processed-to-history` → history queue, `video-processed-to-search` → search queue), each consumer behind its own queue
 
 **Given** a video that has processed to `PROCESSED` (Epic 2)
 **When** the consumer receives the SQS record

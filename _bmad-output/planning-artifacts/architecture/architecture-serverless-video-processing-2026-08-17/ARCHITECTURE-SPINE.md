@@ -48,7 +48,7 @@ docker-compose.yaml          # floci only (Docker socket mounted)
 
 - **Binds:** all publishers, all consumers, the bus, all queues
 - **Prevents:** point-to-point wiring between functions, consumers inventing their own transport, and the PRD's redelivery/idempotency semantics (FR-9, FR-15, NFR-1) having no honest home
-- **Rule:** one custom EventBridge bus carries all domain events. Routing is normative: `video.uploaded` → processing-trigger queue only; `video.processed` → history queue and search queue only. Every consumer sits behind its own SQS queue (at-least-once); no consumer is invoked directly by the bus except where AD-5 mandates the shim. SNS is not used. A new consumer = new queue + new rule target, never a change to an existing consumer.
+- **Rule:** one custom EventBridge bus carries all domain events. Routing is normative: `video.uploaded` → processing-trigger queue only; `video.processed` → history queue and search queue only. Every consumer sits behind its own SQS queue (at-least-once); no consumer is invoked directly by the bus except where AD-5 mandates the shim. SNS is not used. A new consumer = new queue + its own new EventBridge rule targeting only that queue, never a change to an existing consumer or rule.
 
 ### AD-2 — State machine enforced by DynamoDB conditional writes via a shared access layer [ADOPTED]
 
