@@ -55,6 +55,8 @@ terraform.rc
 
 # Custom
 .agents
+.opencode
+
 .worktrees/
 
 # Transient full-diff review scaffolding (never commit)
