@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-18-2026 22:19
-last_updated: 08-25-2026 00:15
+last_updated: 08-26-2026 10:52
 project: serverless-video-processing
 project_key: NOKEY
 tracking_system: file-system
@@ -58,7 +58,7 @@ development_status:
   4-2-title-search-through-the-gateway: done
   4-3-admin-only-index-rebuild: done
   4-4-end-to-end-lab-verification-sm-1: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 action_items:
   - id: "epic-1-retro-item-1-resolve-binary-upload-gap-before-epic-2"
     epic: 1
@@ -168,3 +168,29 @@ action_items:
     owner: "Kygor"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-3-retro-2026-08-24.md"
+  - id: "epic-4-retro-item-15-close-admin-only-guard-underscore-hole"
+    epic: 4
+    action: "Close the underscore hole in test_no_other_tf_file_references_the_function
+      (lambdas/search_rebuild/tests/test_terraform_admin_only.py:93-104): also assert
+      search_rebuild absent from every other .tf file - cross-file Terraform references
+      use the address form aws_lambda_function.search_rebuild.arn which the hyphen-only
+      grep never sees; an ESM/rule/route wired elsewhere passes FR-19 proof green"
+    owner: "Kygor"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-08-26.md"
+  - id: "epic-4-retro-item-16-mark-epic-4-key-done"
+    epic: 4
+    action: "Mark development_status epic-4 done in sprint-status.yaml - all four
+      story keys done and detect-epic returns empty pending, but the epic key is still
+      in-progress while epics 1-3 are done"
+    owner: "Kygor"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-08-26.md"
+  - id: "epic-4-retro-item-17-query-truncation-warning-parity"
+    epic: 4
+    action: "Add a LastEvaluatedKey warning to search_query/handler.py and history_query/handler.py
+      plus one unit pin each, mirroring search_rebuild/handler.py:87-91 - keeps NFR-7
+      single-scan while making partial results observable past one Scan page"
+    owner: "Kygor"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-08-26.md"
