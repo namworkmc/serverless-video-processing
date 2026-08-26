@@ -387,3 +387,62 @@ class TestConfigNotCode:
         import history_query.handler as h
         with pytest.raises(RuntimeError):
             h._history_table()
+
+
+# ---------------------------------------------------------------------------
+# T11 — Scan-truncation observability (epic-4 retro AI-17/F2): parity with
+# search_rebuild/handler.py:87-91 — warn loudly past one Scan page while
+# keeping NFR-7 single-scan semantics and the 200-partial-results contract.
+# ---------------------------------------------------------------------------
+
+class TestScanTruncationObservability:
+    def test_truncated_scan_warns_loudly_still_single_scan(
+            self, deps, caplog):
+        """If DynamoDB reports LastEvaluatedKey (>1 Scan page) the handler
+        must WARN that entries may be partial — but NOT paginate (NFR-7
+        lab scale pins single-scan semantics). videoId is known, so the
+        metadata 404 gate passes; `scan_calls == 1` proves gate ordering
+        held. The fake's real `scan` is WRAPPED, not replaced."""
+        deps[HISTORY_TABLE].items.extend([
+            _entry(VIDEO_ID, "UPLOADED", TS_UPLOADED),
+            _entry(VIDEO_ID, "PROCESSED", TS_PROCESSED),
+        ])
+        original_scan = deps[HISTORY_TABLE].scan
+
+        def truncating(**kwargs):
+            result = original_scan(**kwargs)
+            result["LastEvaluatedKey"] = {
+                "eventId": events.event_id(VIDEO_ID, "PROCESSED")}
+            return result
+
+        deps[HISTORY_TABLE].scan = truncating
+        with caplog.at_level(logging.WARNING):
+            result = handler(_gw_event(VIDEO_ID), None)
+        assert result["statusCode"] == 200
+        body = _body(result)
+        assert [e["status"] for e in body["entries"]] == [
+            "UPLOADED", "PROCESSED"]
+        assert set(body["entries"][0]) == {"status", "eventId", "timestamp"}
+        # Records must come from THIS handler module's own logger at
+        # WARNING level, with the lazy-%d count rendered correctly
+        # (both seeded entries match -> "after 2 items").
+        warn_records = [r for r in caplog.records
+                        if r.name == "history_query.handler"
+                        and r.levelno == logging.WARNING]
+        assert any(
+            "truncated" in r.getMessage()
+            and "LastEvaluatedKey" in r.getMessage()
+            and "after 2 items" in r.getMessage()
+            for r in warn_records)
+        assert len(deps[HISTORY_TABLE].scan_calls) == 1
+
+    def test_single_page_scan_logs_no_truncation_warning(
+            self, deps, caplog):
+        """No-warn control: an always-warn implementation fails here."""
+        deps[HISTORY_TABLE].items.append(
+            _entry(VIDEO_ID, "PROCESSED", TS_PROCESSED))
+        with caplog.at_level(logging.WARNING):
+            result = handler(_gw_event(VIDEO_ID), None)
+        assert result["statusCode"] == 200
+        assert not any("truncated" in r.getMessage()
+                       for r in caplog.records)

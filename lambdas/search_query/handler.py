@@ -72,6 +72,15 @@ def handler(event, context):  # noqa: ARG001 - Lambda signature
             FilterExpression="contains(title, :t)",
             ExpressionAttributeValues={":t": title},
         )
+        # Pagination is deliberately out of scope (NFR-7 lab scale): a
+        # truncated Scan silently drops later pages, so at least say so
+        # loudly (mirrors search_rebuild/handler.py). Single-scan stays.
+        if resp.get("LastEvaluatedKey"):
+            logger.warning(
+                "search-index scan truncated after %d items "
+                "(LastEvaluatedKey present) — results may be partial; "
+                "pagination is out of scope per NFR-7 lab scale",
+                len(resp.get("Items", [])))
         results = sorted(
             (
                 {"videoId": item["videoId"], "title": item["title"],
