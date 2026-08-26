@@ -406,9 +406,14 @@ zero resources (substrate only), the provider `endpoints{}` skeleton
 verified, and the README quick-start documented Terraform-only — no
 `aws` CLI anywhere in setup/teardown.
 
-⏭️ **Next:** project wrap-up — Epic 4 retrospective, then the lab is
-done: SM-1 proven (clean rebuild → full Bruno collection → every target
-service exercised). See `_bmad-output/`.
+✅ **Epic 4 retrospective complete** — verdict `accepted-with-open-items`; all
+four epics built, merged, and retro'd. SM-1 proven: clean rebuild → full
+Bruno collection → every target service exercised.
+
+⏭️ **Next:** wrap-up decisions — two optional hardening items from the retro
+(admin-only structural guard's underscore blind spot; query-lambda Scan
+truncation warning parity) and formally closing the archive-provider
+packaging question. See `_bmad-output/implementation-artifacts/epic-4-retro-2026-08-26.md`.
 
 ---
 
