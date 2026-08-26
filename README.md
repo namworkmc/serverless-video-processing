@@ -87,7 +87,23 @@ terraform init
 terraform apply
 ```
 
-Teardown: `terraform destroy`, then `docker compose down`.
+### 🧹 Teardown & clean rebuild
+
+The whole lab is reproducible from nothing but this repository and Docker —
+the fixed cycle is `terraform destroy` → `docker compose down` to tear it
+all down, then the Quick start order above to bring it back. A fresh apply
+recreates every resource from the same configuration with **no manual
+steps** in between (SM-1, verified in Story 4.4):
+
+```bash
+cd terraform && terraform destroy && cd ..
+# ...later / elsewhere, from scratch:
+docker compose up -d --wait
+cd terraform && terraform init && terraform apply && cd ..
+```
+
+`destroy` removes all infrastructure but leaves the emulator running state
+alone; `down` stops floci itself. Both are safe to re-run.
 
 ## 📤 Upload journey (Story 1.3)
 
@@ -146,16 +162,58 @@ unparseable body, empty file, invalid filename) return `400 {"error": ...}`.
 `bruno/` holds the API collection — every request targets the gateway base
 URL only, never backend endpoints. `bruno/sample.mp4` is a tiny text stub
 (`fake-video-bytes-for-bruno`), not a real video — swap in a real file for
-realistic testing. Set the `gatewayBaseUrl` variable in
-`bruno/environments/Local.bru` (replace the `REPLACE_WITH_API_ID`
-placeholder) from the `api_id` output after apply, then:
+realistic testing.
+
+Run the whole collection in one command — the base URL is injected from
+the Terraform output at run time, so the committed `REPLACE_WITH_API_ID`
+placeholder never needs hand-editing:
 
 ```bash
-cd bruno
-bru run --env Local
-# or without editing the env file:
-bru run --env Local --env-var "gatewayBaseUrl=http://localhost:4566/_aws/execute-api/$API_ID/local"
+cd bruno && bru run --env Local \
+  --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)"
 ```
+
+(Prerequisite: the [Bruno CLI](https://docs.usebruno.com/bru/overview),
+version **4.x** — verified with 4.0.0; `npm install -g @usebruno/cli`.
+The collection's search request relies on 4.x script/response APIs;
+older CLIs may behave differently. bru runs only at a collection root,
+hence the `cd bruno` prefix. Editing `Local.bru` by hand still works,
+but the one-liner above is the supported path — it can never drift from
+a fresh apply. In PowerShell, set `$base = terraform -chdir=terraform
+output -raw gateway_base_url` first, then from `bruno/` pass
+`"gatewayBaseUrl=$base"`.)
+
+## ✅ End-to-end verification (SM-1)
+
+The lab's definition of done, proven live in Story 4.4: from a clean
+rebuild, one upload through the gateway produces a `PROCESSED` metadata
+record, a status-history entry, and a search hit — all queryable through
+the gateway — with every target service demonstrably exercised:
+
+```bash
+docker compose up -d --wait                                  # 1. emulator healthy
+(cd terraform && terraform destroy -auto-approve)            # 2. tear it all down
+(cd terraform && terraform init && terraform apply -auto-approve)   # 3. rebuild from nothing
+(cd bruno && bru run --env Local \                           # 4. full journey
+  --env-var "gatewayBaseUrl=$(cd ../terraform && terraform output -raw gateway_base_url)")
+```
+
+**Traceability** — where each service's evidence lives after that run:
+
+| Service | Evidence |
+|---|---|
+| API Gateway | the passing collection itself (all requests via `_aws/execute-api`) |
+| Lambda | invocation log lines: `docker compose logs floci` (CloudWatch is emulated) |
+| Step Functions | `list_executions` / `describe_execution` on `processing-state-machine` — execution name `eb-{eventId}`, input carries the `videoId` |
+| EventBridge | `video.processed` delivered to the `smoke-capture-queue` (declared in `terraform/integration.tf`, so a plain apply creates it) |
+| S3 | object readable under `processed/{videoId}/…` in `video-processed` |
+| DynamoDB | `video-metadata` record PROCESSED; `status-history` entries; `search-index` hit |
+
+This evidence is perishable — the next rebuild cycle wipes execution
+history and drains the capture queue, so inspect before re-running.
+Ad-hoc inspection uses local boto3 (endpoint `http://localhost:4566`,
+dummy `test`/`test` credentials) — see `lambdas/README.md` for invoke
+patterns; there is no `aws` CLI anywhere in this procedure.
 
 ## ⚙️ Transcode worker (Story 2.1)
 
@@ -221,7 +279,11 @@ python -c "import boto3, json; c = boto3.client('stepfunctions', endpoint_url='h
 **floci platform facts (binding):**
 
 - floci supports `UpdateStateMachine` — ASL changes apply in place via
-  `terraform apply`.
+  `terraform apply`. **Caveat:** because the machine is updated in place,
+  a changed ASL can be invisible to an apply that sees no other diff —
+  force the replacement with
+  `terraform apply -replace=aws_sfn_state_machine.processing`
+  and confirm the new definition via `describe_state_machine`.
 - floci's `lambda:invoke` wraps the Lambda result as
   `{Payload: ..., StatusCode: ...}` like real AWS. The Transcode task
   unwraps `$.Payload` via `ResultSelector`, so the ASL is identical on
@@ -344,9 +406,9 @@ zero resources (substrate only), the provider `endpoints{}` skeleton
 verified, and the README quick-start documented Terraform-only — no
 `aws` CLI anywhere in setup/teardown.
 
-⏭️ **Next:** Epic 3 — the status-history surface (history consumer +
-`status-history` table, then `GET /videos/{videoId}/history` through the
-gateway). See `_bmad-output/`.
+⏭️ **Next:** project wrap-up — Epic 4 retrospective, then the lab is
+done: SM-1 proven (clean rebuild → full Bruno collection → every target
+service exercised). See `_bmad-output/`.
 
 ---
 

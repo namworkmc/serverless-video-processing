@@ -76,3 +76,17 @@ Findings surfaced during review that are real but not this story's problem to fi
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-2-title-search-through-the-gateway.md`
   summary: Search-query surface docs — lambdas/README inventory/section/test-counts and top-level README third route (+ stale "Next: Epic 3" note) — ship with Story 4.4's docs pass
   evidence: Extends the ratified Epic-4 docs-pass deferral recorded during Story 4.1 review ("Search-leg README/docs surface ships with Story 4.4's verification pass"); same pre-existing convention (spec-2-3 precedent), same landing point; surfaced incidentally by Story 4.2 review run 1
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-4-end-to-end-lab-verification-sm-1.md`
+  summary: Bruno collection content pins (B-range: poll loops, videoId containment proof, gateway-only URLs, searchTitle interpolation) are hand-checked markdown, not executable gates - a weakened .bru file would pass SM-1 silently until a human reruns the collection
+  evidence: Story 4.4 review (verification-gap layer) proved no script/test/workflow reads any .bru file and ci-local has no bru stage; suggested shape is rg gates over bruno/*.bru mirroring R3/R6's mechanical idiom or a pure-pytest structural checker per the test_terraform_admin_only.py precedent; needs ci-local wiring which the frozen spec reserved as Ask First
+
+## Deferred from: code review of story-4.4 (2026-08-24)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-4-end-to-end-lab-verification-sm-1.md`
+  summary: README rebuild procedure omits the two-checkout tfstate hazard — the spec's Always tier made copying `terraform.tfstate*` between checkouts load-bearing for worktree runs, but the documented destroy→apply cycle says nothing about second clones; run from another checkout it silently recreates everything under a new apiId and diverges the main checkout's live state. Candidate shape: one-sentence warning in the Teardown & clean rebuild subsection.
+  evidence: Code review 2026-08-24 (acceptance-auditor + blind-hunter convergence); spec frozen Always tier "Copy terraform/terraform.tfstate* … BEFORE any destroy/apply"; checklist Design Notes call the state dance load-bearing
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-4-end-to-end-lab-verification-sm-1.md`
+  summary: ATDD checklist gate conventions are presence-only — R3 proves the string `-replace` appears but never that the flagged Terraform address is real (this review caught README.md:281 naming `aws_sfn_state_machine.processing_state_machine`, which is not declared), and R6's `^\s*aws\s` misses inline invocations (`cd x && aws s3 …`, `$(aws …)`). Candidate shape: rg gates cross-checking addresses against terraform/*.tf, and matching `aws` anywhere within shell lines.
+  evidence: Code review 2026-08-24; the R3 miss is demonstrated by README.md:281 itself (wrong address passed the gate)
+- Note: the Bruno-content executable-guard deferral (spec-4-4 entry immediately above this section) was independently ratified by this review's verification-gap layer — no script/test/workflow executes any `.bru` content.
