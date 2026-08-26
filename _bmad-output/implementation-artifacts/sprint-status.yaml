@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 08-18-2026 22:19
-last_updated: 08-26-2026 10:52
+last_updated: 08-26-2026 11:10
 project: serverless-video-processing
 project_key: NOKEY
 tracking_system: file-system
@@ -53,7 +53,7 @@ development_status:
   3-2-history-query-through-the-gateway: done
   epic-3-retrospective: done
 
-  epic-4: in-progress
+  epic-4: done
   4-1-search-consumer-indexing-processed-videos: done
   4-2-title-search-through-the-gateway: done
   4-3-admin-only-index-rebuild: done
@@ -184,7 +184,7 @@ action_items:
       story keys done and detect-epic returns empty pending, but the epic key is still
       in-progress while epics 1-3 are done"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-08-26.md"
   - id: "epic-4-retro-item-17-query-truncation-warning-parity"
     epic: 4
