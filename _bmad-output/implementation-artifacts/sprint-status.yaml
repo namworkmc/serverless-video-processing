@@ -176,7 +176,7 @@ action_items:
       use the address form aws_lambda_function.search_rebuild.arn which the hyphen-only
       grep never sees; an ESM/rule/route wired elsewhere passes FR-19 proof green"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-08-26.md"
   - id: "epic-4-retro-item-16-mark-epic-4-key-done"
     epic: 4
@@ -192,5 +192,5 @@ action_items:
       plus one unit pin each, mirroring search_rebuild/handler.py:87-91 - keeps NFR-7
       single-scan while making partial results observable past one Scan page"
     owner: "Kygor"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-08-26.md"

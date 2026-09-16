@@ -380,3 +380,58 @@ class TestConfigNotCode:
         assert result["statusCode"] == 500
         assert set(_body(result)) == {"error"}
         assert _body(result)["error"]
+
+
+# ---------------------------------------------------------------------------
+# T9 — Scan-truncation observability (epic-4 retro AI-17/F2): parity with
+# search_rebuild/handler.py:87-91 — warn loudly past one Scan page while
+# keeping NFR-7 single-scan semantics and the 200-partial-results contract.
+# ---------------------------------------------------------------------------
+
+class TestScanTruncationObservability:
+    def test_truncated_scan_warns_loudly_still_single_scan(
+            self, deps, caplog):
+        """If DynamoDB reports LastEvaluatedKey (>1 Scan page) the handler
+        must WARN that results may be partial — but NOT paginate (NFR-7
+        lab scale pins single-scan semantics). The fake's real `scan` is
+        WRAPPED, not replaced, so expression-shape evaluation still runs."""
+        deps[INDEX_TABLE].items.extend([
+            _indexed(VIDEO_ID, "Anchor A"),
+            _indexed(OTHER_VIDEO_ID, "Enchanted"),
+        ])
+        original_scan = deps[INDEX_TABLE].scan
+
+        def truncating(**kwargs):
+            result = original_scan(**kwargs)
+            result["LastEvaluatedKey"] = {"videoId": OTHER_VIDEO_ID}
+            return result
+
+        deps[INDEX_TABLE].scan = truncating
+        with caplog.at_level(logging.WARNING):
+            result = handler(_gw_event({"title": "nch"}), None)
+        assert result["statusCode"] == 200
+        body = _body(result)
+        assert [r["videoId"] for r in body["results"]] == [
+            VIDEO_ID, OTHER_VIDEO_ID]
+        # Records must come from THIS handler module's own logger at
+        # WARNING level, with the lazy-%d count rendered correctly
+        # (both seeded items match -> "after 2 items").
+        warn_records = [r for r in caplog.records
+                        if r.name == "search_query.handler"
+                        and r.levelno == logging.WARNING]
+        assert any(
+            "truncated" in r.getMessage()
+            and "LastEvaluatedKey" in r.getMessage()
+            and "after 2 items" in r.getMessage()
+            for r in warn_records)
+        assert len(deps[INDEX_TABLE].scan_calls) == 1
+
+    def test_single_page_scan_logs_no_truncation_warning(
+            self, deps, caplog):
+        """No-warn control: an always-warn implementation fails here."""
+        deps[INDEX_TABLE].items.append(_indexed(VIDEO_ID, "Anchor A"))
+        with caplog.at_level(logging.WARNING):
+            result = handler(_gw_event({"title": "nch"}), None)
+        assert result["statusCode"] == 200
+        assert not any("truncated" in r.getMessage()
+                       for r in caplog.records)

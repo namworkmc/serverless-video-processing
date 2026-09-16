@@ -10,9 +10,12 @@ infra, no boto3. Two guarantees:
     Resource BLOCKS are parsed (comment lines stripped first), so a
     comment that merely MENTIONS a forbidden type does not fail.
 
-(b) No OTHER terraform/*.tf file references "search-rebuild" outside
-    comments — proving no route/rule/queue elsewhere wires the function
-    in. The admin-only constraint holds by structural absence, checked
+(b) No OTHER terraform/*.tf file references the function outside
+    comments — in EITHER literal form: the hyphenated name
+    "search-rebuild" or the Terraform address form "search_rebuild"
+    (e.g. aws_lambda_function.search_rebuild.arn) — proving no
+    route/rule/queue elsewhere wires the function in. The admin-only
+    constraint holds by structural absence, checked
     on every unit-test run instead of by eyeball.
 
 Skips cleanly if the terraform dir is absent (defensive only).
@@ -98,10 +101,40 @@ class TestSearchRebuildIsAdminOnly:
         for path in others:
             body = _strip_hcl_comments(
                 path.read_text(encoding="utf-8"))
-            assert "search-rebuild" not in body, (
-                f"FR-19 violation: {path.name} references "
-                "'search-rebuild' outside comments — no other file may "
-                "wire the function into a route/rule/queue/mapping")
+            # BOTH literal forms: cross-file references use either the
+            # hyphenated function name or the Terraform address form
+            # (aws_lambda_function.search_rebuild.arn) — a hyphen-only
+            # grep never sees the latter.
+            for form in ("search-rebuild", "search_rebuild"):
+                assert form not in body, (
+                    f"FR-19 violation: {path.name} references "
+                    f"{form!r} outside comments — no other file may "
+                    "wire the function into a route/rule/queue/mapping")
+
+    def test_address_form_reference_in_other_file_fails_the_guard(
+            self, terraform_dir):
+        """Durable positive-direction pin (epic-4 retro AI-15): a
+        cross-file Terraform ADDRESS-form reference must trip
+        test_no_other_tf_file_references_the_function — detection stays
+        proven by construction on every run, not by one-time manual RED
+        evidence. Probe is created and removed within this invocation
+        (try/finally), mirroring the Assumptions hygiene rule."""
+        probe = terraform_dir / "_probe_ai15_scratch.tf"
+        probe.write_text(
+            'resource "aws_s3_bucket" "probe" {\n'
+            "  bucket = aws_lambda_function.search_rebuild.arn\n"
+            "}\n",
+            encoding="utf-8")
+        try:
+            with pytest.raises(AssertionError) as excinfo:
+                TestSearchRebuildIsAdminOnly(
+                ).test_no_other_tf_file_references_the_function(
+                    terraform_dir)
+        finally:
+            probe.unlink()
+        message = str(excinfo.value)
+        assert "_probe_ai15_scratch.tf" in message
+        assert "search_rebuild" in message
 
     def test_rebuild_file_still_declares_the_function_itself(
             self, terraform_dir):
